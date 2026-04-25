@@ -2,6 +2,7 @@ import csv
 from smt.sampling_methods import LHS
 import numpy as np
 
+# SET FILENAME BEFORE RUNNING
 FILENAME = "points"
 
 # Hypercube bounds
@@ -24,7 +25,7 @@ for i in range(0, n-1):
 
 x = x.tolist()
 
-# Adds sample number as first csv column
+# Adds sample number as first csv column 
 for i in range(0, len(x)):
     x[i] = [i] + x[i]
 
