@@ -1,7 +1,7 @@
 from datetime import datetime
 import numpy as np
 import pandas as pd
-from CR30_power_model import powertrain_sim
+from CR30_Power_Model import powertrain_sim
 
 def status(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -17,8 +17,8 @@ def simulate(sim, input_file, output_file):
     results_list = []
 
     for i in range(len(data_array)):
-        velocity_initial = data_array[i, 2]
-        acceleration = data_array[i, 3]
+        velocity_initial = data_array[i, 3]
+        acceleration = data_array[i, 4]
         
         step_output = sim.step(velocity_initial, acceleration, energy_initial, temp_initial)
         results_list.append(step_output)
@@ -83,4 +83,4 @@ CR30_sim = powertrain_sim(CR30_CAR_MASS,
                      CR30_CURRENT_MAX, 
                      CR30_DCIR_SAFETY_FACTOR)
 
-simulate(CR30_sim, 'tracks\\endurance_track', 'CR30_Michican_EV_2026')
+simulate(CR30_sim, 'tracks\\endurance_track_timed', 'CR30_Michican_EV_2026')

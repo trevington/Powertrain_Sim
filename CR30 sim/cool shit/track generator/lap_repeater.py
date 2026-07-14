@@ -43,7 +43,18 @@ def process_and_plot_laps(csv_path, timestep=0.05, laps=22):
     full_v = np.tile(v_interp, laps)
     full_t = np.arange(len(full_x)) * timestep
 
-    # 4. Visualization
+    # 4. Save to CSV
+    output_df = pd.DataFrame({
+        'Time (s)': full_t,
+        'X coord (m)': full_x,
+        'Y coord (m)': full_y,
+        'V_target (m/s)': full_v,
+        'A_target (m/s^2)': np.gradient(full_v, timestep)
+    })
+    output_csv = csv_path.replace('.csv', '_timed.csv')
+    output_df.to_csv(output_csv, index=False)
+
+    # 5. Visualization
     plt.figure(figsize=(14, 10))
     
     # Subplot 1: Spatial Trajectory heatmap
@@ -68,6 +79,7 @@ def process_and_plot_laps(csv_path, timestep=0.05, laps=22):
     plt.show()
 
     print(f"Simulation Summary:")
+    print(f"Saved processed data to: {output_csv}")
     print(f"Estimated Lap Time: {total_lap_time:.2f}s")
     print(f"Total Race Time: {full_t[-1]/60:.2f} minutes")
 
