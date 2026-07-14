@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-def add_velocity_targets(input_csv, output_csv, max_lat_g=1.5, max_long_g=0.8, max_v_mps=35.0):
+def add_velocity_targets(input_csv, output_csv, max_lat_g=1.5, max_long_g=0.8, max_v_mps=28.41):
     """
     Calculates physics-limited target velocity and acceleration for processed waypoints.
     """

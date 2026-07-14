@@ -140,9 +140,13 @@ class powertrain_sim:
         temp_final = temp_initial + temp_rise
 
         return {
-            'final_velocity': velocity_final,
-            'energy_used': energy_consumed,
-            'temp_final': temp_final,
-            'power': power,
-            'soe': soe
+            'final_velocity (m/s)': velocity_final,
+            'energy_used (Ws)': energy_consumed,
+            'temp_final (C)': temp_final,
+            'power (W)': power,
+            'soe (%)': soe,
+            'acceleration_energy (Ws)': acceleration_energy,
+            'aero_energy (Ws)': aero_energy,
+            'regen_energy (Ws)': regen_energy,
+            'rolling_resistance_energy (Ws)': rolling_resistance_energy,
         }

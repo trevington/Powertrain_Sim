@@ -15,17 +15,24 @@ def simulate(sim, input_file, output_file):
     data_array = operating_points.values
 
     results_list = []
+    lap = 1
+    starting_point = data_array[0, 1:3]  # Starting X and Y coordinates
 
     for i in range(len(data_array)):
         velocity_initial = data_array[i, 3]
         acceleration = data_array[i, 4]
         
+        # Check if the car has completed a lap
+        if np.linalg.norm(data_array[i, 1:3] - starting_point) < 1.0 and i != 0 and np.linalg.norm(data_array[i-1, 1:3] - starting_point) >= 1.0:
+            lap += 1
+            status(f"Lap {lap} completed.")
+
         step_output = sim.step(velocity_initial, acceleration, energy_initial, temp_initial)
-        results_list.append(step_output)
+        results_list.append({'time (s)': data_array[i,0], 'lap': lap, 'x coordinate (m)': data_array[i,1], 'y coordinate (m)': data_array[i,2]} | step_output)
         status("Operating point {} simulated.".format(i))
 
-        energy_initial -= step_output['energy_used']
-        temp_initial = step_output['temp_final']
+        energy_initial -= step_output['energy_used (Ws)']
+        temp_initial = step_output['temp_final (C)']
 
     status("Simulation complete.")
 

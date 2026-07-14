@@ -22,6 +22,6 @@ if __name__ == "__main__":
     add_velocity_targets(
         input_csv='tracks\\endurance_track.csv',
         output_csv='tracks\\endurance_track.csv',
-        max_lat_g=1.5,
-        max_long_g=1.71
+        max_lat_g=2.0,
+        max_long_g=0.96
     )
