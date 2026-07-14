@@ -1,7 +1,7 @@
 from datetime import datetime
 import numpy as np
 import pandas as pd
-from CR30_Power_Model import powertrain_sim
+from CR30_power_model import powertrain_sim
 
 def status(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
