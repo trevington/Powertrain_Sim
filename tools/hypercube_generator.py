@@ -6,15 +6,13 @@ import numpy as np
 FILENAME = "points"
 
 # Hypercube bounds
-limits = np.array([[0,1],
-                  [0,1],
-                  [0,1],
-                  [0,1]])
+limits = np.array([[0,6000],
+                  [0,160]])
 
 sampling = LHS(xlimits=limits)
 
 # Number of points in hypercube
-n = 400
+n = 64
 x = sampling(n)
 
 '''
@@ -27,7 +25,7 @@ x = x.tolist()
 
 # Adds sample number as first csv column 
 for i in range(0, len(x)):
-    x[i] = [i] + x[i]
+    x[i] = x[i] + ['.']
 
 # Creates sampling csv 
 for i in range(0, len(x)):
