@@ -1,7 +1,8 @@
 import numpy as np
+from scipy.interpolate import RegularGridInterpolator
 
 class Motor:
-    def __init__(self, inertia=0.045, thermal_mass=12.0, peak_torque=210.0, peak_power_kw=80.0, max_rpm=6000.0):
+    def __init__(self, thermal_mass=12.0, max_rpm=7000.0):
         """
         High-Fidelity Electric Motor Plant Model for FSAE Transient Simulation.
         Default values approximate an EMRAX 208 High Voltage Medium-Cooling motor.
@@ -15,17 +16,17 @@ class Motor:
         max_rpm : float -> Mechanical redline ceiling of the rotor
         """
         # --- Mechanical Properties ---
-        self.J = inertia
-        self.max_torque_peak = peak_torque
-        self.max_power = peak_power_kw * 1000.0  # Convert to Watts
-        self.max_omega = (max_rpm * 2 * np.pi) / 60.0  # Convert RPM to rad/s
+        self.J = 0.01569 # Rotor inertia
+        self.max_torque_peak = 150.0 # 150 Nm peak torque
+        self.max_power = 80000.0  # 80 kw FSAE limit
+        self.max_omega = (7000 * 2 * np.pi) / 60.0  # Convert 7,000 RPM to rad/s
         
         # --- Electrical/Loss Coefficients (Approximated for PMAC Motor) ---
-        self.R_stator = 0.025      # Internal phase-to-phase resistance approximation (Ohms)
-        self.kt = 1.25             # Torque constant (Nm / A_rms)
-        self.k_iron = 0.005        # Hysteresis loss coefficient
-        self.k_eddy = 0.00008      # Eddy current loss coefficient
-        self.k_friction = 0.015    # Windage and bearing friction coefficient
+        self.R_stator = 0.01227 * 2      # Internal phase-to-phase resistance approximation (Ohms) (Value at 25°C)
+        self.kt = 0.62             # Torque constant (Nm / A_rms)
+        
+        # efficiency grid (speed, torque, efficiency)
+        efficiency_map = np.array([[100,20,.86],[200,20,.86],[300,20,.86],[400,20,.86],[100,40,.90],[200,40,.94],[300]])
         
         # --- Thermal Properties ---
         # Thermal mass (C_p * mass) dictates how fast losses turn into temperature spikes
@@ -76,7 +77,7 @@ class Motor:
 
     def calculate_losses(self, torque, omega):
         """
-        Calculates total power dissipation (heat losses) using an analytical physics breakdown.
+        Calculates total power dissipation (heat losses) using a 2D efficiency map lookup.
         
         Returns:
         --------
@@ -84,20 +85,23 @@ class Motor:
         """
         abs_omega = abs(omega)
         abs_torque = abs(torque)
+        p_mech = abs_torque * abs_omega
         
-        # 1. Copper Losses (I^2 * R)
-        # Torque is directly proportional to quadrature current (I = Torque / Kt)
-        I_rms = abs_torque / self.kt
-        p_copper = (I_rms**2) * self.R_stator
+        # Efficiency maps are numerically unstable at zero speed (efficiency = P_out / P_in)
+        # We handle low-speed losses using the analytical copper loss as a fallback
+        if abs_omega < 5.0:
+            i_rms = abs_torque / self.kt
+            return (i_rms**2) * self.R_stator
         
-        # 2. Iron/Core Losses (Hysteresis increases linearly with speed, Eddy currents quadratically)
-        p_iron = (self.k_iron * abs_omega) + (self.k_eddy * (abs_omega**2))
+        # Perform 2D interpolation for motor efficiency
+        # Query requires a point in the shape (1, 2)
+        efficiency = float(self.eff_interp(np.array([abs_omega, abs_torque])))
         
-        # 3. Mechanical Losses (Windage and bearing dragging friction)
-        p_friction = self.k_friction * abs_omega * abs_torque
+        # Total input power is P_mech / efficiency; losses are the difference
+        eff_clamped = np.clip(efficiency, 0.1, 0.99)
+        p_loss = p_mech * (1.0 / eff_clamped - 1.0)
         
-        total_p_loss = p_copper + p_iron + p_friction
-        return total_p_loss
+        return p_loss
 
     def step_thermal_node(self, p_loss, coolant_temp, dt):
         """
