@@ -72,5 +72,5 @@ def process_and_plot_laps(csv_path, timestep=0.05, laps=22):
     print(f"Total Race Time: {full_t[-1]/60:.2f} minutes")
 
 if __name__ == "__main__":
-    csv_file = '/home/tadayal100/Powertrain_Sim/CR30 sim/cool shit/tracks/endurance_track.csv'
+    csv_file = 'tracks/endurance_track.csv'
     process_and_plot_laps(csv_file)
