@@ -1,32 +1,32 @@
-Path Commander (driver)
+Path Commander (driver.py)
 - "drives" car
 - Uses feedback loop to move car to next waypoint
 - Allows us to simulate car on multiple courses (Endurance, Acceleration, Autocross, Skidpad)
 - Outputs: throttle % (to powertrain controller sim), steering angle (to powertrain controller sim)
 
-Powertrain controller Sim
+Powertrain controller Sim (powertrain.py)
 - Controls Powertrain
 - Ensures FSAE rules are followed during simulation
 - Allocates power to motor(s)
 - Should simulate realistic vehicle Commander
 - Outputs: Power demand (to tractive battery electrical sim), motor power distribution (to motor & inverter sim)
 
-Tractive Battery Electrical Sim
+Tractive Battery Electrical Sim (motor.py)
 - Simulates tractive battery electrical performance (efficiency, heat generation, maximum power, Open Circuit voltage, energy used) at operating point
 - Treats tractive battery as point with uniform Temperature
 - Outputs: Power supplied (to motor & inverter sim), heat generated (to tractive battery cooling sim)
 
-Tractive Battery Cooling Sim
+Tractive Battery Cooling Sim (tb_thermal.py)
 - Simulates tractive battery cooling performance
 - Outputs: heat removed (to tractive battery electrical sim)
 
-Motor & Inverter Sim
+Motor & Inverter Sim (motor.py)
 - Simulates shaft output at operating point
 - Calculates energy lost, efficiency and heat generation
 - Optimize car for motor performance
 - Outputs: heat generation (to Motor & inverter thermal sim), shaft output (to Vehicle dynamics sim)
 
-Vehicle dynamics Sim
+Vehicle dynamics Sim (vd.py)
 - Should be one file so that it can be swapped when VD team creates model
 - Simulates ambient conditions around car
 - Runs tire sims and calculates non-powertrain losses
