@@ -1,7 +1,7 @@
 from datetime import datetime
 import numpy as np
 import pandas as pd
-from CR30_Power_Model import powertrain_sim
+from CR30_power_model import powertrain_sim
 
 def status(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -83,5 +83,4 @@ CR30_sim = powertrain_sim(CR30_CAR_MASS,
                      CR30_CURRENT_MAX, 
                      CR30_DCIR_SAFETY_FACTOR)
 
-simulate(CR30_sim, 'CR28_Endurance_Sim_Data', 'CR30_endurance_output')
-simulate(CR31_sim, 'CR28_Endurance_Sim_Data', 'CR31_endurance_output')
+simulate(CR30_sim, 'tracks\\endurance_track', 'CR30_endurance_output')
