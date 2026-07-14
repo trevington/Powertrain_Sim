@@ -149,4 +149,6 @@ class powertrain_sim:
             'aero_energy (Ws)': aero_energy,
             'regen_energy (Ws)': regen_energy,
             'rolling_resistance_energy (Ws)': rolling_resistance_energy,
+            'peak_power_capability (W)': peak_power_capability,
+            'current (A)': current,
         }

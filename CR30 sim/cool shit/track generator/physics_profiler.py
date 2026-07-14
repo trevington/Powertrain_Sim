@@ -51,7 +51,7 @@ def add_velocity_targets(input_csv, output_csv, max_lat_g=1.5, max_long_g=0.8, m
         for i in range(n):
             next_idx = (i + 1) % n
             accel = (v_target[next_idx]**2 - v_target[i]**2) / (2 * dists[i] + 1e-6)
-            a_target[i] = np.clip(accel, -a_long_max, a_long_max)
+            a_target[i] = np.clip(accel, -1.49, a_long_max)
             
         # Update and save
         df['V_target (m/s)'] = v_target

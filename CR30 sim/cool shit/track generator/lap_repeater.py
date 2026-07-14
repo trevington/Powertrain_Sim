@@ -81,7 +81,7 @@ def process_and_plot_laps(csv_path, timestep=0.05, laps=22):
     print(f"Simulation Summary:")
     print(f"Saved processed data to: {output_csv}")
     print(f"Estimated Lap Time: {total_lap_time:.2f}s")
-    print(f"Total Race Time: {full_t[-1]/60:.2f} minutes")
+    print(f"Total Race Time: {full_t[-1]:.2f} seconds")
 
 if __name__ == "__main__":
     csv_file = 'tracks/endurance_track.csv'

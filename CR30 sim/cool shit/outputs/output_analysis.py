@@ -15,7 +15,7 @@ def load_data(csv_path):
     with csv_path.open("r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            time.append(float(row["time (s)"]))
+            #time.append(float(row["time (s)"]))
             energy.append(float(row["energy_used (Ws)"]))
             power.append(float(row["power (W)"]))
             velocity.append(float(row["final_velocity (m/s)"]))
@@ -91,12 +91,13 @@ def plot_results(time, energy, acceleration, power, velocity, soe, temp, output_
 
 def main():
     script_dir = Path(__file__).resolve().parent
-    csv_path = script_dir / "CR30_Michican_EV_2026.csv"
+    csv_path = script_dir / "CR30_Michican_IC_2025.csv"
     output_path = script_dir / "analysis_plots.png"
 
     time, energy, power, velocity, soe, temp = load_data(csv_path)
     acceleration = compute_acceleration(time, velocity)
-    plot_results(time, energy, acceleration, power, velocity, soe, temp, output_path)
+    plot_results(energy, acceleration, power, velocity, soe, temp, output_path)
+
 
     print('maximum power: ', max(power))
     print('maximum velocity: ', max(velocity))
@@ -112,7 +113,6 @@ def main():
     print('average velocity: ', sum(velocity) / len(velocity))
     print('average acceleration: ', sum(acceleration) / len(acceleration))
     print('average temperature: ', sum(temp) / len(temp))
-
 
 if __name__ == "__main__":
     main()

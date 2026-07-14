@@ -23,5 +23,5 @@ if __name__ == "__main__":
         input_csv='tracks\\endurance_track.csv',
         output_csv='tracks\\endurance_track.csv',
         max_lat_g=2.0,
-        max_long_g=0.96
+        max_long_g=0.6
     )

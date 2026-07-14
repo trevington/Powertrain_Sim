@@ -29,7 +29,6 @@ def simulate(sim, input_file, output_file):
 
         step_output = sim.step(velocity_initial, acceleration, energy_initial, temp_initial)
         results_list.append({'time (s)': data_array[i,0], 'lap': lap, 'x coordinate (m)': data_array[i,1], 'y coordinate (m)': data_array[i,2]} | step_output)
-        status("Operating point {} simulated.".format(i))
 
         energy_initial -= step_output['energy_used (Ws)']
         temp_initial = step_output['temp_final (C)']
@@ -91,3 +90,5 @@ CR30_sim = powertrain_sim(CR30_CAR_MASS,
                      CR30_DCIR_SAFETY_FACTOR)
 
 simulate(CR30_sim, 'tracks\\endurance_track_timed', 'CR30_Michican_EV_2026')
+
+simulate(CR30_sim, 'tracks\\cr28_endurance_track_timed', 'CR30_Michican_IC_2025')
