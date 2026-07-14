@@ -17,8 +17,8 @@ def simulate(sim, input_file, output_file):
     results_list = []
 
     for i in range(len(data_array)):
-        velocity_initial = data_array[i, 0]
-        acceleration = data_array[i, 1]
+        velocity_initial = data_array[i, 2]
+        acceleration = data_array[i, 3]
         
         step_output = sim.step(velocity_initial, acceleration, energy_initial, temp_initial)
         results_list.append(step_output)
@@ -30,7 +30,7 @@ def simulate(sim, input_file, output_file):
     status("Simulation complete.")
 
     final_results_df = pd.DataFrame(results_list)
-    final_results_df.to_csv('sims\{}.csv'.format(output_file), index=False)
+    final_results_df.to_csv('outputs\\{}.csv'.format(output_file), index=False)
     status("Simulation saved")
 
 '''
@@ -49,7 +49,7 @@ CR30_FINAL_DRIVE_EFFICIENCY = 0.98 # %
 CR30_REGEN_TRANSFER_EFFICIENCY = 0.80 # % NOTE: 0.8 FOR TESTING
 
 # GLV draw
-CR30_GLV_SYSTEM_DRAW = 1 * 1000 # W 
+CR30_GLV_SYSTEM_DRAW = 1000 # W 
 
 # Battery
 CR30_RBJ = 0.0001 # Ohm
@@ -83,5 +83,4 @@ CR30_sim = powertrain_sim(CR30_CAR_MASS,
                      CR30_CURRENT_MAX, 
                      CR30_DCIR_SAFETY_FACTOR)
 
-simulate(CR30_sim, 'CR28_Endurance_Sim_Data', 'CR30_endurance_output')
-simulate(CR31_sim, 'CR28_Endurance_Sim_Data', 'CR31_endurance_output')
+simulate(CR30_sim, 'tracks\\endurance_track', 'CR30_Michican_EV_2026')
