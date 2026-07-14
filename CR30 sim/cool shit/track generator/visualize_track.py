@@ -50,5 +50,5 @@ def visualize_track(csv_path):
     plt.show()
 
 if __name__ == "__main__":
-    csv_file = '/home/tadayal100/Powertrain_Sim/CR30 sim/cool shit/endurance_meters.csv'
+    csv_file = '\\courses\\endurance_meters.csv'
     visualize_track(csv_file)
