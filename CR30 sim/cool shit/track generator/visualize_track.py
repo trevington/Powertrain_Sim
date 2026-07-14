@@ -15,16 +15,17 @@ def visualize_track(csv_path):
     df = pd.read_csv(csv_path)
     x = df['X coord (m)'].values
     y = df['Y coord (m)'].values
+    v = df['V_target (m/s)'].values
 
     plt.figure(figsize=(12, 10))
     
     # 1. Plot the trajectory line to show the overall shape
     plt.plot(x, y, color='black', alpha=0.3, label='Track Boundary')
     
-    # 2. Use a scatter plot with a colormap to show point sequence
-    # The color transitions from purple (index 0) to yellow (final index)
-    sc = plt.scatter(x, y, c=range(len(x)), cmap='viridis', s=20, label='Waypoints Sequence')
-    plt.colorbar(sc, label='Waypoint Index')
+    # 2. Use a scatter plot with a colormap to show target velocity
+    # The color represents the speed limit calculated by the physics profiler
+    sc = plt.scatter(x, y, c=v, cmap='plasma', s=25, label='Velocity Profile')
+    plt.colorbar(sc, label='Target Velocity (m/s)')
 
     # 3. Add directional arrows using Quiver
     # Calculate vectors between consecutive points
@@ -43,7 +44,7 @@ def visualize_track(csv_path):
     plt.axis('equal')  # Critical to maintain correct geometric proportions
     plt.xlabel('X Position (meters)')
     plt.ylabel('Y Position (meters)')
-    plt.title('Processed Track Visualization\n(Verify Counter-Clockwise Direction)')
+    plt.title('Track Velocity Heatmap\n(Arrows indicate CCW direction)')
     plt.legend()
     plt.grid(True, linestyle=':', alpha=0.6)
     plt.show()
