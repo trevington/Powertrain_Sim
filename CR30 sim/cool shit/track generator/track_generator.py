@@ -20,8 +20,8 @@ from physics_profiler import add_velocity_targets
 
 if __name__ == "__main__":
     add_velocity_targets(
-        input_csv='endurance_processed.csv',
+        input_csv='tracks\\endurance_track.csv',
         output_csv='tracks\\endurance_track.csv',
         max_lat_g=1.5,
-        max_long_g=0.8
+        max_long_g=1.71
     )

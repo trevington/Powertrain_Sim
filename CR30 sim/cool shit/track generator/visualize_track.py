@@ -50,5 +50,5 @@ def visualize_track(csv_path):
     plt.show()
 
 if __name__ == "__main__":
-    csv_file = '\\courses\\endurance_meters.csv'
+    csv_file = 'tracks\\endurance_track.csv'
     visualize_track(csv_file)
