@@ -26,6 +26,12 @@ Motor & Inverter Sim (motor.py)
 - Optimize car for motor performance
 - Outputs: heat generation (to Motor & inverter thermal sim), shaft output (to Vehicle dynamics sim)
 
+Motor & Inverter thermal sim (motor.py)
+- Simulates radiator motor & inverter cooling
+- Calculates radiator sizing
+- Motor & Inverter don't need to be at steady state Temperature, but the temperature shouldn't exceed 60C during endurance
+- Outputs: cooling capability (to motor & inverter sim)
+
 Vehicle dynamics Sim (vd.py)
 - Should be one file so that it can be swapped when VD team creates model
 - Simulates ambient conditions around car
