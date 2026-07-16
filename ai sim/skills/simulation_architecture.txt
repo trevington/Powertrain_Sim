@@ -30,6 +30,7 @@ Motor & Inverter thermal sim (motor.py)
 - Simulates radiator motor & inverter cooling
 - Calculates radiator sizing
 - Motor & Inverter don't need to be at steady state Temperature, but the temperature shouldn't exceed 60C during endurance
+- Motor & Inverter temperatures cannot exceed 50C
 - Outputs: cooling capability (to motor & inverter sim)
 
 Vehicle dynamics Sim (vd.py)
