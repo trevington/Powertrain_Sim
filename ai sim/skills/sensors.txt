@@ -1,0 +1,40 @@
+# Suspension sensors
+Steering wheel angle - rotary potentiometer / encoder (1)
+This sensor shouldn't spin forever. It just needs to measure the complete range the steering wheel travels. A potentiometer can be used or an absolute rotary encoder. ENSURE THE ENCODER ABSOLUTE NOT RELATIVE!
+
+Throttle Sensors - linear potentiometers (2)
+This is a required sensor. It is called the APPS and to be fully rules compliant, two sensors must be used. There are a lot of rules about these sensors. Read the SAE rules.
+
+Chassis IMU - 6 axis IMU or 9 axis IMU (1)
+IMU or Inertial Measurement Unit is a cluster of sensors. The first sensor is a 3 axis translational accelerometer. The second sensor is a 3 axis gyro that measures rotation. The final and typically unneeded sensor is a 3 axis compass or magnetometer.
+
+Brake Sensor - Pressure sensor (1 front and 1 rear)
+Not sure if we should split the brake system into front and rear with 2 sensors. Brake pressure sensors typically output a change in voltage. The sensor itself could most likely be a
+piezoelectric or strain gauge based. In any case, it is reasonable to assume it will do internal amplification and typically outputs in the 0-5v range.
+
+Slip Angle Sensor - Computer Mouse Optical Sensor / Correvit Style (1)
+The same sensor that is in a computer mouse, but pointed at the ground. Tracks the position, speed, and angle of the car. This is a rare sensor with a ~$15,000+ price tag. It might be a worthwhile research project to recreate this. As with most engineering equipment, the price tag might just be inflated
+
+Control Arm Forces - Strain Guages (4 x 6)
+
+
+Wheel Speed / Position Sensor - Hall Effect, Encoder, Asymmetric Rotors (4)
+This "could" be split into two sensors or someone smart could keep them speed and position together. The speed of the wheel is the important value. Absolute position is only needed for wheel alignment and can be as simple as a limit switch and triggers at the top of a revolution. Wheel position can be calculated by taking integral or summing over time the wheel speed - but is inaccurate over long periods of time.
+
+Wheel Angle Sensor - Hall Effect, Encoder, Asymmetric Rotors (4)
+These will record the relative position of the tire in relation to the chassis. It will be used to validate motion / kinematic models and give bump steer. It only needs to be a potentiometer.
+
+Wheel Vertical accelerometer - Single Axis Accelerometer (Piezoelectric Accelerometers) (4)
+This will most likely be a piezoelectric sensor that acts very similar to strain gauges. More will be written about this. This will measure vibrations the tires see, validating Suspension's load cases.
+
+Spring Displacement Sensor - linear potentiometer / rotary potentiometer (4)
+We already use Linear Potentiometers for this. These sensors are expensive and Tyler Gehl was looking into / designing a mechanism that would allow the use of rotary encoders.
+
+A-Arm Angle / Ride Height Sensor - Linear Potentiometer / rotary potentiometer (4)
+In all aspects except position on the car, this is a duplicate of the spring displacement sensor
+
+Wheel Alignment IMU - 6 axis IMU or 9 axis IMU (1)
+This is an accelerometer that will be attached to a single rim at a time. It will be used only during the wheel alignment process and most likely be an internal suspension sensor. It is on this list, however, because it will need to talk to the telemetry board and DAQ board.
+
+# Powertrain Sensors
+Battery Management Board Cell Tab Thermo
