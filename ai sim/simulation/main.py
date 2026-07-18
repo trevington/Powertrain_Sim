@@ -25,9 +25,10 @@ class SimulationEngine:
         self.dt, self.total_time, self.g = 0.008, 1800.0, 9.81
         cell_mass = 0.2667
         self.mass = (292.0 - (140 * cell_mass)) + (self.p['num_cells'] * cell_mass)
-        
+        # Aero
         self.aero_v_ms = np.array([25, 35, 45, 55, 65, 75]) * 0.44704
         self.aero_drag_n = np.array([30, 59, 99, 148, 207, 275]) * 4.44822
+        # Rolling Resistance
         self.rr_v_ms = np.array([5.56, 11.11, 16.67, 22.22, 27.78, 33.33])
         self.rr_coeff = np.array([0.015, 0.0165, 0.018, 0.021, 0.025, 0.028])
 

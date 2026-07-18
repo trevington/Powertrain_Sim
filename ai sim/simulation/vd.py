@@ -18,6 +18,7 @@ class VehicleDynamics:
         self.yaw = 0.0
         self.yaw_rate = 0.0
         self.v = 0.0
+        self.f_cent = 0.0
 
         # Physical constants (matching main.py)
         self.rho = self.params.get('rho', 1.225)         # Air density
@@ -44,7 +45,6 @@ class VehicleDynamics:
         f_propulsion = total_torque / self.R
 
         # 2. Calculate Braking Force
-        # Assuming max braking force approx 1.5G (standard for FSAE)
         max_brake_force = self.mass * self.g * self.max_brake_accel_g
         f_braking = physics_inputs.get('mechanical_brake_pct', 0) * max_brake_force
 
@@ -68,7 +68,8 @@ class VehicleDynamics:
         
         # Yaw update (Steering)
         # Steering angle is limited to prevent mathematical singularity
-        delta = np.clip(steering_angle, -np.radians(45), np.radians(45))
+        # 23.5 degree rule-limited maximum steering angle
+        delta = np.clip(steering_angle, -np.radians(23.5), np.radians(23.5))
         self.yaw_rate = (self.v / self.L) * np.tan(delta)
         self.yaw += self.yaw_rate * dt
         self.yaw = np.arctan2(np.sin(self.yaw), np.cos(self.yaw)) # Normalize
