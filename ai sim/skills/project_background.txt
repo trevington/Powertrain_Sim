@@ -1,0 +1,24 @@
+Goal: make data-driven design decisions for EV powertrain using simulations and optimizations. Simulations should be accurate to real life and validated wherever possible.
+
+Background:
+Iowa State Formula SAE EV team, CR30 is the 2025-2026 car and CR31 is the 2026-2027 car. CR31 is being designed, while CR30 has already been built. 
+
+Motor:
+CR30 used 1 rear Emrax 208 motor, CR31 will use the same Emrax 208 as well as 2 custom front hub motors. The front hub motors are not final however and may not be ready for the car in time, so the CR31 simulation should be modular enough to allow for either a 1 RWD or 1 rear, 2 front motor configuration.
+A chain links the rear motor to the rear axle, while a gearbox will be used in the front.
+
+Chassis:
+CR30 and CR31 use a custom carbon-fiber monocoque, with the tractive battery stored behind the driver. 
+
+Aero:
+CR30 and CR31 use a front wing, rear wing, undertray, and side wings. 
+
+Suspension:
+CR30 and CR31 have an anti-roll bar system that remove roll in the car.
+
+Tractive Battery:
+CR30 used molastis pouch cells, CR31 will either use the same pouch cells or new cylandrical cells. 
+CR30 starts at 600V and has a max amperage of 200A, CR31 will start between 550-600V (depending on regeneration capabilities) and will have a max amperage of 200A.
+
+Optimization:
+OpenMDAO will be used for optimization of the simulator
