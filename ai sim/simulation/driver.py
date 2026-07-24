@@ -183,7 +183,7 @@ class PathCommander:
 
     def _handle_acceleration(self, state):
         """Logic for straight-line acceleration event."""
-        # Max throttle, zero steering
+            
         return 1.0, 0.0
 
 if __name__ == "__main__":

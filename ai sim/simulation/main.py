@@ -3,11 +3,11 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import csv
 from scipy.interpolate import RegularGridInterpolator
-from simulation.driver import PathCommander
-from simulation.powertrain import PowertrainController
-from simulation.motor import PowertrainSystem
-from simulation.vd import VehicleDynamics
-from simulation.tb_thermal import TractiveBatteryThermal
+from driver import PathCommander
+from powertrain import PowertrainController
+from motor import PowertrainSystem
+from vd import VehicleDynamics
+from tb_thermal import TractiveBatteryThermal
 
 class SimulationEngine:
     def __init__(self, params=None):
@@ -18,9 +18,13 @@ class SimulationEngine:
             'max_v': 28.41, 'ambient_temp': 25.0, 'initial_battery_temp': 38.0,
             'laps_to_run': 22, 'motor_config': 'RWD', 'tv_kp': 600.0, 'tv_kd': 25.0,
             'steer_kp': 0.8, 'steer_kd': 0.2, 'lookahead_dist': 4.0, 'lookahead_gain': 0.3,
-            'wheelbase': 1.535
+            'wheelbase': 1.535, 'mode': 'Endurance',
+            'rear_motor_max_torque': 150.0, 'rear_motor_max_rpm': 7000.0,
+            'front_motor_max_power_kw': 10.0, 'front_motor_max_torque': 4.7,
+            'front_motor_max_rpm': 20000.0, 'front_gear_ratio': 13.4
         }
         if params: self.p.update(params)
+        self.mode = self.p.get('mode', 'Endurance')
 
         self.dt, self.total_time, self.g = 0.008, 1800.0, 9.81
         cell_mass = 0.2667
@@ -37,6 +41,10 @@ class SimulationEngine:
         self._reset_state()
 
     def _prepare_waypoints(self):
+        if self.p.get('mode') == 'Acceleration':
+            # Return a simple straight line waypoints: (x, y, target_v, curvature)
+            return [[0.0, 0.0, self.p['max_v'], 0.0], [150.0, 0.0, self.p['max_v'], 0.0]]
+
         coords = []
         try:
             with open(self.track_file, 'r') as f:
@@ -81,7 +89,7 @@ class SimulationEngine:
         return waypoints
 
     def _init_components(self):
-        self.driver = PathCommander(track_waypoints=self.waypoints, mode='Endurance', params=self.p)
+        self.driver = PathCommander(track_waypoints=self.waypoints, mode=self.mode, params=self.p)
         self.controller = PowertrainController(motor_config=self.p['motor_config'], max_power_kw=self.p['max_power_kw'], params=self.p)
         self.powertrain = PowertrainSystem(config=self.p['motor_config'], params=self.p)
         self.vd = VehicleDynamics(mass=self.mass, params=self.p)
@@ -92,7 +100,8 @@ class SimulationEngine:
         initial_yaw = np.arctan2(self.waypoints[1][1] - self.waypoints[0][1], self.waypoints[1][0] - self.waypoints[0][0])
         self.state = {'x': self.waypoints[0][0], 'y': self.waypoints[0][1], 'yaw': initial_yaw, 'v': 0.0, 'yaw_rate': 0.0}
         self.vd.x, self.vd.y, self.wheel_speeds, self.battery_temp = self.state['x'], self.state['y'], {'rear': 0.0, 'front_left': 0.0, 'front_right': 0.0}, self.p['initial_battery_temp']
-        self.history = {k: [] for k in ['time', 'v', 'v_target', 'cte', 'soc', 'temp', 'p_draw', 'throttle', 'x', 'y', 'voltage', 'soe', 't_front', 't_rear', 't_fl', 't_fr']}
+        self.history = {k: [] for k in ['time', 'v', 'v_target', 'cte', 'soc', 'temp', 'p_draw', 'throttle', 'x', 'y', 'voltage', 'soe', 't_front', 't_rear', 't_fl', 't_fr', 'redline']}
+        self._redline_warned = False
         self.grip_limited_time = self.power_limited_time = self.braking_time = self.other_time = self.total_heat_j = self.total_aero_j = self.total_rr_j = self.total_accel_j = self.total_regen_j = 0.0
         self.laps_completed, self.lap_times, self.lap_segment_indices, self.lap_start_time, self.sector_times = 0, [], [], 0.0, [0.0]*4
 
@@ -101,7 +110,18 @@ class SimulationEngine:
         if verbose: print(f"Starting Simulation: {self.controller.motor_config} configuration...")
         wps_per_sector, prev_wp_idx = max(1, len(self.waypoints) // 4), 0
 
+        start_x = self.state['x']
+
         for t_idx, t in enumerate(np.arange(0, self.total_time, self.dt)):
+            # Check for 75m finish line in Acceleration mode
+            if self.mode == 'Acceleration' and (self.state['x'] - start_x) >= 75.0:
+                if verbose: print(f"75m Acceleration Finish! Time: {t:.3f}s")
+                self.final_time = t
+                self.lap_times.append(t)
+                self.lap_segment_indices.append((0, t_idx))
+                self.laps_completed = 1
+                break
+
             throttle_pct, _ = self.driver.get_commands(self.state, self.dt)
             Ld = max(self.p['lookahead_dist'], self.p['lookahead_gain'] * self.state['v'])
             lookahead_idx = self.driver.current_waypoint_idx
@@ -119,6 +139,11 @@ class SimulationEngine:
             self.battery_temp += self.thermal.get_temperature_delta(motor_outputs.get('battery_heat_w', 0.0), self.thermal.calculate_heat_removed(self.battery_temp, self.state['v']), self.dt)
             self.total_heat_j += motor_outputs['total_heat_w'] * self.dt
 
+            is_redline = motor_outputs.get('motor_redline', False)
+            if is_redline and verbose and not self._redline_warned:
+                print(f"--- WARNING: MOTOR REDLINE REACHED at t={t:.3f}s ---")
+                self._redline_warned = True
+
             v_prev = self.state['v']
             self.state, self.wheel_speeds = self.vd.step({'rear_axle_torque': motor_outputs.get('rear_axle_torque', 0), 'fl_wheel_torque': motor_outputs.get('fl_wheel_torque', 0), 'fr_wheel_torque': motor_outputs.get('fr_wheel_torque', 0), 'mechanical_brake_pct': demands['mechanical_brake_pct']}, steering_angle, self.dt)
 
@@ -126,10 +151,10 @@ class SimulationEngine:
             self.total_aero_j += np.interp(v_curr, self.aero_v_ms, self.aero_drag_n, left=0.0) * v_curr * self.dt
             self.total_rr_j += np.interp(v_curr, self.rr_v_ms, self.rr_coeff) * self.mass * self.g * v_curr * self.dt
             if v_curr > v_prev: self.total_accel_j += self.mass * ((v_curr - v_prev) / self.dt) * v_curr * self.dt
-            if demands['battery_power_demand_w'] < 0: self.total_regen_j += abs(demands['battery_power_demand_w']) * self.dt
+            if motor_outputs['p_net_w'] < 0: self.total_regen_j += abs(motor_outputs['p_net_w']) * self.dt
 
             curr_wp = self.waypoints[self.driver.current_waypoint_idx]
-            for k, v in zip(self.history.keys(), [t, v_curr, curr_wp[2], np.sqrt((self.state['x'] - curr_wp[0])**2 + (self.state['y'] - curr_wp[1])**2), motor_outputs['soc_pct'], self.battery_temp, demands['battery_power_demand_w'], throttle_pct, self.state['x'], self.state['y'], motor_outputs.get('voltage', 0.0), motor_outputs.get('soe_pct', 0.0), motor_outputs.get('fl_wheel_torque', 0.0) + motor_outputs.get('fr_wheel_torque', 0.0), motor_outputs.get('rear_axle_torque', 0.0), motor_outputs.get('fl_wheel_torque', 0.0), motor_outputs.get('fr_wheel_torque', 0.0)]):
+            for k, v in zip(self.history.keys(), [t, v_curr, curr_wp[2], np.sqrt((self.state['x'] - curr_wp[0])**2 + (self.state['y'] - curr_wp[1])**2), motor_outputs['soc_pct'], self.battery_temp, motor_outputs['p_net_w'], throttle_pct, self.state['x'], self.state['y'], motor_outputs.get('voltage', 0.0), motor_outputs.get('soe_pct', 0.0), motor_outputs.get('fl_wheel_torque', 0.0) + motor_outputs.get('fr_wheel_torque', 0.0), motor_outputs.get('rear_axle_torque', 0.0), motor_outputs.get('fl_wheel_torque', 0.0), motor_outputs.get('fr_wheel_torque', 0.0), 1.0 if is_redline else 0.0]):
                 self.history[k].append(v)
 
             self.sector_times[min(self.driver.current_waypoint_idx // wps_per_sector, 3)] += self.dt
@@ -153,19 +178,34 @@ class SimulationEngine:
 
     def get_results(self, verbose=True, log_file=None):
         if verbose:
-            print("\n" + "="*30 + "\n      LAP TIME SUMMARY\n" + "="*30)
-            print(f"Total Session Time:  {self.final_time:.3f} s\nGrip Limited:        {self.grip_limited_time:.2f} s\nPower Limited:       {self.power_limited_time:.2f} s\nBest Lap Time:       {min(self.lap_times):.3f} s")
-            print(f"Max Battery Temp:    {max(self.history['temp']):.2f} °C\nFinal SoE:           {self.history['soe'][-1]:.2f} %")
+            header = "ACCELERATION SUMMARY" if self.mode == 'Acceleration' else "LAP TIME SUMMARY"
+            time_label = "75m Run Time:     " if self.mode == 'Acceleration' else "Best Lap Time:    "
+            primary_time = self.final_time if self.mode == 'Acceleration' else (min(self.lap_times) if self.lap_times else self.final_time)
+
+            print("\n" + "="*30 + f"\n      {header}\n" + "="*30)
+            print(f"Total Session Time:  {self.final_time:.3f} s")
+            print(f"Grip Limited:        {self.grip_limited_time:.2f} s")
+            print(f"Power Limited:       {self.power_limited_time:.2f} s")
+            print(f"{time_label} {primary_time:.3f} s")
+            print(f"Max Battery Temp:    {max(self.history['temp']):.2f} °C")
+            print(f"Final SoE:           {self.history['soe'][-1]:.2f} %")
+            print(f"Energy Recovered:    {self.total_regen_j / 3600.0:.2f} Wh")
+            if any(self.history['redline']):
+                print(f"Motor Redline:       REACHED")
+
         if log_file:
             with open(log_file, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(self.history.keys())
                 writer.writerows(zip(*self.history.values()))
+        
+        res_time = self.final_time if self.mode == 'Acceleration' else (min(self.lap_times) if self.lap_times else 9999.0)
         return {
-            'best_lap_time': min(self.lap_times) if self.lap_times else 9999.0,
+            'best_lap_time': res_time,
             'mean_cte': np.mean(self.history['cte']) if self.history['cte'] else 999.0,
             'max_cte': max(self.history['cte']) if self.history['cte'] else 999.0,
-            'laps_completed': self.laps_completed
+            'laps_completed': self.laps_completed,
+            'total_regen_wh': self.total_regen_j / 3600.0
         }
 
 def run_simulation(params=None, verbose=True, plot=True):
@@ -333,4 +373,4 @@ def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None):
     
 
 if __name__ == "__main__":
-    run_simulation()
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 1, 'motor_config': 'AWD', 'front_motor_max_power_kw': 10, 'front_motor_max_torque': 4.7, 'front_motor_max_rpm': 20000, 'front_gear_ratio': 17.0})
