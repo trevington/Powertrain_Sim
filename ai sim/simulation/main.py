@@ -18,10 +18,13 @@ class SimulationEngine:
             'max_v': 28.41, 'ambient_temp': 25.0, 'initial_battery_temp': 38.0,
             'laps_to_run': 22, 'motor_config': 'RWD', 'tv_kp': 600.0, 'tv_kd': 25.0,
             'steer_kp': 0.8, 'steer_kd': 0.2, 'lookahead_dist': 4.0, 'lookahead_gain': 0.3,
-            'wheelbase': 1.535, 'mode': 'Endurance',
+            'wheelbase': 1.535, 'mode': 'Endurance', 'h_cg': 0.3302, # 13 inches in meters
+            'weight_dist_rear': 0.53, 'aero_dist_rear': 0.55,
+            'cla': 3.5, # Assume a Lift Coefficient * Area (ClA) for downforce
             'rear_motor_max_torque': 150.0, 'rear_motor_max_rpm': 7000.0,
             'front_motor_max_power_kw': 10.0, 'front_motor_max_torque': 4.7,
-            'front_motor_max_rpm': 20000.0, 'front_gear_ratio': 13.4
+            'front_motor_max_rpm': 20000.0, 'front_gear_ratio': 13.4,
+            'rear_efficiency_csv': '/home/tadayal100/Powertrain_Sim/ai sim/emrax208_efficiency.csv'
         }
         if params: self.p.update(params)
         self.mode = self.p.get('mode', 'Endurance')
@@ -98,9 +101,9 @@ class SimulationEngine:
     def _reset_state(self):
         if not self.waypoints: return
         initial_yaw = np.arctan2(self.waypoints[1][1] - self.waypoints[0][1], self.waypoints[1][0] - self.waypoints[0][0])
-        self.state = {'x': self.waypoints[0][0], 'y': self.waypoints[0][1], 'yaw': initial_yaw, 'v': 0.0, 'yaw_rate': 0.0}
+        self.state = {'x': self.waypoints[0][0], 'y': self.waypoints[0][1], 'yaw': initial_yaw, 'v': 0.0, 'yaw_rate': 0.0, 'a': 0.0, 'f_downforce': 0.0}
         self.vd.x, self.vd.y, self.wheel_speeds, self.battery_temp = self.state['x'], self.state['y'], {'rear': 0.0, 'front_left': 0.0, 'front_right': 0.0}, self.p['initial_battery_temp']
-        self.history = {k: [] for k in ['time', 'v', 'v_target', 'cte', 'soc', 'temp', 'p_draw', 'throttle', 'x', 'y', 'voltage', 'soe', 't_front', 't_rear', 't_fl', 't_fr', 'redline']}
+        self.history = {k: [] for k in ['time', 'v', 'v_target', 'cte', 'soc', 'temp', 'p_draw', 'throttle', 'x', 'y', 'voltage', 'soe', 't_front', 't_rear', 't_fl', 't_fr', 'redline', 'f_grip_f', 'f_grip_r', 'f_regen_f', 'f_regen_r']}
         self._redline_warned = False
         self.grip_limited_time = self.power_limited_time = self.braking_time = self.other_time = self.total_heat_j = self.total_aero_j = self.total_rr_j = self.total_accel_j = self.total_regen_j = 0.0
         self.laps_completed, self.lap_times, self.lap_segment_indices, self.lap_start_time, self.sector_times = 0, [], [], 0.0, [0.0]*4
@@ -134,6 +137,14 @@ class SimulationEngine:
             alpha = (np.arctan2(target_wp[1] - self.state['y'], target_wp[0] - self.state['x']) - self.state['yaw'] + np.pi) % (2*np.pi) - np.pi
             steering_angle = np.arctan2(2.0 * self.p['wheelbase'] * np.sin(alpha), Ld)
 
+            # Calculate instantaneous acceleration and aero downforce for the controller
+            # Acceleration from the previous step is used to avoid algebraic loops
+            v_prev = self.history['v'][-1] if self.history['v'] else 0.0
+            self.state['a'] = (self.state['v'] - v_prev) / self.dt if t > 0 else 0.0
+            
+            # F_downforce = 0.5 * rho * ClA * v^2
+            self.state['f_downforce'] = 0.5 * 1.225 * self.p.get('cla', 3.0) * self.state['v']**2
+
             demands = self.controller.calculate_demands(throttle_pct, steering_angle, self.state, self.wheel_speeds, self.dt)
             motor_outputs = self.powertrain.step(demands['motor_torques'], self.wheel_speeds, self.dt, self.battery_temp)
             self.battery_temp += self.thermal.get_temperature_delta(motor_outputs.get('battery_heat_w', 0.0), self.thermal.calculate_heat_removed(self.battery_temp, self.state['v']), self.dt)
@@ -154,7 +165,14 @@ class SimulationEngine:
             if motor_outputs['p_net_w'] < 0: self.total_regen_j += abs(motor_outputs['p_net_w']) * self.dt
 
             curr_wp = self.waypoints[self.driver.current_waypoint_idx]
-            for k, v in zip(self.history.keys(), [t, v_curr, curr_wp[2], np.sqrt((self.state['x'] - curr_wp[0])**2 + (self.state['y'] - curr_wp[1])**2), motor_outputs['soc_pct'], self.battery_temp, motor_outputs['p_net_w'], throttle_pct, self.state['x'], self.state['y'], motor_outputs.get('voltage', 0.0), motor_outputs.get('soe_pct', 0.0), motor_outputs.get('fl_wheel_torque', 0.0) + motor_outputs.get('fr_wheel_torque', 0.0), motor_outputs.get('rear_axle_torque', 0.0), motor_outputs.get('fl_wheel_torque', 0.0), motor_outputs.get('fr_wheel_torque', 0.0), 1.0 if is_redline else 0.0]):
+            values = [
+                t, v_curr, curr_wp[2], np.sqrt((self.state['x'] - curr_wp[0])**2 + (self.state['y'] - curr_wp[1])**2),
+                motor_outputs['soc_pct'], self.battery_temp, motor_outputs['p_net_w'], throttle_pct, self.state['x'], self.state['y'],
+                motor_outputs.get('voltage', 0.0), motor_outputs.get('soe_pct', 0.0), motor_outputs.get('fl_wheel_torque', 0.0) + motor_outputs.get('fr_wheel_torque', 0.0),
+                motor_outputs.get('rear_axle_torque', 0.0), motor_outputs.get('fl_wheel_torque', 0.0), motor_outputs.get('fr_wheel_torque', 0.0),
+                1.0 if is_redline else 0.0, demands['f_grip_f'], demands['f_grip_r'], demands['f_regen_f'], demands['f_regen_r']
+            ]
+            for k, v in zip(self.history.keys(), values):
                 self.history[k].append(v)
 
             self.sector_times[min(self.driver.current_waypoint_idx // wps_per_sector, 3)] += self.dt
@@ -222,7 +240,7 @@ def run_simulation(params=None, verbose=True, plot=True):
     return res
 
 def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None):
-    fig, axs = plt.subplots(7, 2, figsize=(14, 35))
+    fig, axs = plt.subplots(8, 2, figsize=(14, 40))
     
     linestyles = ['-', '--', ':', '-.']
     
@@ -302,6 +320,13 @@ def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None):
         axs[5, 1].plot(lap['time'], pf_fl, label=f'{label} FL %', color='blue', linestyle=ls)
         axs[5, 1].plot(lap['time'], pf_fr, label=f'{label} FR %', color='cyan', linestyle=ls, alpha=0.6)
 
+        # Braking Traction Analysis (N)
+        axs[7, 0].plot(lap['time'], lap['f_grip_f'], label=f'{label} Front Grip Limit', color='blue', linestyle='--')
+        axs[7, 0].plot(lap['time'], lap['f_regen_f'], label=f'{label} Front Regen Force', color='blue', linestyle='-')
+        
+        axs[7, 1].plot(lap['time'], lap['f_grip_r'], label=f'{label} Rear Grip Limit', color='red', linestyle='--')
+        axs[7, 1].plot(lap['time'], lap['f_regen_r'], label=f'{label} Rear Regen Force', color='red', linestyle='-')
+
     # Energy Loss Breakdown Pie Chart
     if energy_breakdown:
         names = list(energy_breakdown.keys())
@@ -362,7 +387,14 @@ def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None):
     axs[5, 1].set_ylabel('Percentage of Axle (%)')
     axs[5, 1].set_ylim(-5, 105)
 
-    for ax in axs.flat[:-2]:
+    axs[7, 0].set_title('Front Axle Braking Traction')
+    axs[7, 0].set_ylabel('Force (N)')
+
+    axs[7, 1].set_title('Rear Axle Braking Traction')
+    axs[7, 1].set_ylabel('Force (N)')
+
+    for ax in axs.flat:
+        if not ax.has_data(): continue
         ax.set_xlabel('Time (s)')
         ax.legend()
         ax.grid(True)
@@ -373,4 +405,4 @@ def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None):
     
 
 if __name__ == "__main__":
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 1, 'motor_config': 'AWD', 'front_motor_max_power_kw': 10, 'front_motor_max_torque': 4.7, 'front_motor_max_rpm': 20000, 'front_gear_ratio': 17.0})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 1, 'motor_config': 'RWD', 'front_motor_max_power_kw': 10, 'front_motor_max_torque': 4.7, 'front_motor_max_rpm': 20000, 'front_gear_ratio': 17.0})
