@@ -54,11 +54,29 @@ class Battery:
 
         # Calculate current using Voc (approximate)
         current = power_w / v_oc
-        voltage_drop = current * self.r_internal
+
+        # Dynamic DC Internal Resistance (DCIR) calculation using empirical polynomial
+        ocv = v_cell_oc
+        temp = battery_temp
+        rbj = self.params.get('rbj', self.r_internal)
+        temp_rise = self.params.get('temp_rise', 1.0)
+
+        dcir = rbj + (0.2935676 + 
+                      -0.171888 * ocv + 
+                      -0.00373033 * temp + 
+                      0.03292212 * ocv**2 + 
+                      0.001604118 * ocv * temp + 
+                      0.000009206928 * temp**2 + 
+                      -0.001941274 * ocv**3 + 
+                      -0.0001845216 * ocv**2 * temp + 
+                      -0.000001707152 * ocv * temp**2 + 
+                      -0.000000002083755 * temp**3) * temp_rise
+
+        voltage_drop = current * dcir
         actual_v = v_oc - voltage_drop
         
         # Heat generation (P = I^2R)
-        heat_gen_w = (current**2) * self.r_internal
+        heat_gen_w = (current**2) * dcir
         
         # Update state of charge
         self.energy_remaining_wh -= (power_w * (dt / 3600))
@@ -70,7 +88,7 @@ class MotorInverter:
     Combined Motor and Inverter model.
     Handles the Emrax 208 or custom front hub motors.
     """
-    def __init__(self, name="Emrax 208", max_torque=150, peak_efficiency=0.96, max_rpm=7000, max_power_kw=100.0):
+    def __init__(self, name="Emrax 208", max_torque=150, peak_efficiency=0.96, max_rpm=7000, max_power_kw=86.0):
         self.name = name
         self.max_torque = max_torque
         self.peak_efficiency = peak_efficiency
