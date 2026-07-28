@@ -347,7 +347,6 @@ if __name__ == "__main__":
 
         # Project the 80kW limit onto the efficiency surface for 3D visualization
         eff_at_limit = motor.efficiency_map(rpm_limit_x, torque_limit_y)
-        ax2.plot(rpm_limit_x, torque_limit_y, eff_at_limit, 'r-', linewidth=3, label='80kW Operating Limit')
 
         # Add 3D scatter to show raw points on the surface
         ax2.scatter(motor._raw_data[:, 0], motor._raw_data[:, 1], motor._raw_data[:, 2], 
