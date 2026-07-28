@@ -16,21 +16,19 @@ class TractiveBatteryThermal:
         self.ambient_temp = ambient_temp
         
         # Thermal model constants
-        self.battery_cp = self.params.get('battery_cp', 956.0) # Specific heat capacity of the battery pack (J/kg*K)
-        cell_mass = self.params.get('cell_mass', 0.2667)
-        cell_count = self.params.get('num_cells', 140)
-        self.battery_mass = cell_mass * cell_count # Total mass of the battery pack (kg)
+        self.cell_cp = self.params.get('battery_cp', 955.0) # Specific heat capacity of the cells (J/kg*K)
+        self.cell_mass = self.params.get('cell_mass', 0.2667)
+        self.cell_count = self.params.get('num_cells', 140)
 
         # Fan-specific constants (Internal cooling for CR30)
         self.h_fan = self.params.get('h_fan', 0.0)       # Forced convection coefficient from internal fans (W/m^2*K)
         self.cell_surface_area = self.params.get('cell_surface_area', 1.1) # Estimated total surface area (m^2)
 
-    def calculate_heat_removed(self, battery_temp, vehicle_speed):
+    def calculate_heat_removed(self, battery_temp):
         """
         Calculates the heat removal rate in Watts.
         
         :param battery_temp: Current temperature of the battery pack (Celsius).
-        :param vehicle_speed: Velocity of the car (m/s) to simulate ram-air cooling.
         :return: Heat removed in Watts.
         """
         # Delta T between the battery (source) and ambient air (sink)
@@ -53,4 +51,4 @@ class TractiveBatteryThermal:
         """
         net_heat_flow = heat_gen_w - heat_removed_w
         # dT = (Q_net * dt) / (m * Cp)
-        return (net_heat_flow * dt) / (self.battery_mass * self.battery_cp)
+        return (net_heat_flow * dt) / (self.cell_mass * self.cell_cp)

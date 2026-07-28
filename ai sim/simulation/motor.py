@@ -73,7 +73,7 @@ class Battery:
                       -0.000001707152 * ocv * temp**2 + 
                       -0.000000002083755 * temp**3) * temp_rise
 
-        voltage_drop = current * dcir
+        voltage_drop = 0.0 #current * dcir
         actual_v = v_oc - voltage_drop
         
         # Heat generation (P = I^2R)

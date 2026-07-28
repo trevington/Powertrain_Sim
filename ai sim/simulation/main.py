@@ -11,7 +11,7 @@ from tb_thermal import TractiveBatteryThermal
 
 class SimulationEngine:
     def __init__(self, params=None):
-        self.track_file = '/home/tadayal100/Powertrain_Sim/ai sim/tracks/endurance.csv'
+        self.track_file = 'tracks/endurance.csv'
         self.p = {
             'num_cells': 140, 'max_power_kw': 80.0, 'gear_ratio': 4.6,
             'max_lat_accel_g': 2.0753, 'max_brake_accel_g': 1.49, 'max_grip_accel_g': 0.9656,
@@ -24,7 +24,7 @@ class SimulationEngine:
             'rear_motor_max_torque': 150.0, 'rear_motor_max_rpm': 7000.0,
             'front_motor_max_power_kw': 10.0, 'front_motor_max_torque': 4.7,
             'front_motor_max_rpm': 20000.0, 'front_gear_ratio': 13.4,
-            'rear_efficiency_csv': '/home/tadayal100/Powertrain_Sim/ai sim/emrax208_efficiency.csv'
+            'rear_efficiency_csv': 'emrax208_efficiency.csv'
         }
         if params: self.p.update(params)
         self.mode = self.p.get('mode', 'Endurance')
@@ -147,7 +147,7 @@ class SimulationEngine:
 
             demands = self.controller.calculate_demands(throttle_pct, steering_angle, self.state, self.wheel_speeds, self.dt)
             motor_outputs = self.powertrain.step(demands['motor_torques'], self.wheel_speeds, self.dt, self.battery_temp)
-            self.battery_temp += self.thermal.get_temperature_delta(motor_outputs.get('battery_heat_w', 0.0), self.thermal.calculate_heat_removed(self.battery_temp, self.state['v']), self.dt)
+            self.battery_temp += self.thermal.get_temperature_delta(motor_outputs.get('battery_heat_w', 0.0), 0.0, self.dt) #self.thermal.calculate_heat_removed(self.battery_temp, self.state['v'])
             self.total_heat_j += motor_outputs['total_heat_w'] * self.dt
 
             is_redline = motor_outputs.get('motor_redline', False)
@@ -401,8 +401,8 @@ def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None):
     
     plt.tight_layout()
     plt.savefig('simulation_results.png')
-    plt.show()
+    #plt.show()
     
 
 if __name__ == "__main__":
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 1, 'motor_config': 'RWD', 'front_motor_max_power_kw': 10, 'front_motor_max_torque': 4.7, 'front_motor_max_rpm': 20000, 'front_gear_ratio': 17.0})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 1, 'motor_config': 'RWD'})
