@@ -321,11 +321,18 @@ if __name__ == "__main__":
         contour = ax1.contourf(RPM, TORQUE, EFF, levels=20, cmap='viridis')
         cbar = fig.colorbar(contour, ax=ax1)
         cbar.set_label('Efficiency (%)', rotation=270, labelpad=15)
+
+        # Plot 80kW Power Limit Curve (Torque = Power / Omega)
+        rpm_limit_x = np.linspace(500, 7500, 500)
+        torque_limit_y = 80000 / (rpm_limit_x * 2 * np.pi / 60)
+        ax1.plot(rpm_limit_x, torque_limit_y, 'r--', linewidth=2, label='80kW Power Limit')
+
         ax1.scatter(motor._raw_data[:, 0], motor._raw_data[:, 1], c=motor._raw_data[:, 2], 
                     cmap='viridis', edgecolors='white', linewidths=0.5, label='CSV Data Points')
         ax1.set_title(f'{motor.name} Efficiency Contour', fontsize=14, fontweight='bold')
         ax1.set_xlabel('Motor Speed (RPM)')
         ax1.set_ylabel('Motor Torque (Nm)')
+        ax1.set_ylim(0, 160) # Ensure hyperbola doesn't stretch Y-axis at low RPM
         ax1.grid(True, linestyle='--', alpha=0.5)
         ax1.legend()
         
@@ -337,6 +344,11 @@ if __name__ == "__main__":
         ax2 = fig.add_subplot(1, 2, 2, projection='3d')
         # Plot the surface - antialiased=True helps with visual clarity during rotation
         surf = ax2.plot_surface(RPM, TORQUE, EFF, cmap='viridis', edgecolor='none', alpha=0.8, antialiased=True)
+
+        # Project the 80kW limit onto the efficiency surface for 3D visualization
+        eff_at_limit = motor.efficiency_map(rpm_limit_x, torque_limit_y)
+        ax2.plot(rpm_limit_x, torque_limit_y, eff_at_limit, 'r-', linewidth=3, label='80kW Operating Limit')
+
         # Add 3D scatter to show raw points on the surface
         ax2.scatter(motor._raw_data[:, 0], motor._raw_data[:, 1], motor._raw_data[:, 2], 
                    c=motor._raw_data[:, 2], cmap='viridis', edgecolors='black', s=10)
@@ -347,6 +359,7 @@ if __name__ == "__main__":
         ax2.set_zlabel('Efficiency')
         ax2.view_init(elev=30, azim=225) # Standard angle to see the torque vs RPM curve clearly
         ax2.mouse_init() # Explicitly initialize mouse interaction
+        ax2.legend()
 
         plt.tight_layout()
         # Save first, then show. In some backends, plt.show() clears the figure event loop on close.
