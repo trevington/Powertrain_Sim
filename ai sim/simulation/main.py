@@ -23,7 +23,8 @@ class SimulationEngine:
             'cla': 3.5, # Assume a Lift Coefficient * Area (ClA) for downforce
             'rear_motor_max_torque': 150.0, 'rear_motor_max_rpm': 7000.0,
             'front_motor_max_power_kw': 10.0, 'front_motor_max_torque': 4.7,
-            'front_motor_max_rpm': 20000.0, 'front_gear_ratio': 13.4
+            'front_motor_max_rpm': 20000.0, 'front_gear_ratio': 13.4,
+            'rear_efficiency_csv': '/home/tadayal100/Powertrain_Sim/ai sim/emrax208_efficiency.csv'
         }
         if params: self.p.update(params)
         self.mode = self.p.get('mode', 'Endurance')
@@ -404,4 +405,4 @@ def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None):
     
 
 if __name__ == "__main__":
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'front_motor_max_power_kw': 10, 'front_motor_max_torque': 4.7, 'front_motor_max_rpm': 20000, 'front_gear_ratio': 17.0})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 1, 'motor_config': 'RWD', 'front_motor_max_power_kw': 10, 'front_motor_max_torque': 4.7, 'front_motor_max_rpm': 20000, 'front_gear_ratio': 17.0})

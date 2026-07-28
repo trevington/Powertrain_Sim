@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.interpolate import LinearNDInterpolator
 
 class Battery:
     """
@@ -88,13 +89,42 @@ class MotorInverter:
     Combined Motor and Inverter model.
     Handles the Emrax 208 or custom front hub motors.
     """
-    def __init__(self, name="Emrax 208", max_torque=150, peak_efficiency=0.96, max_rpm=7000, max_power_kw=86.0):
+    def __init__(self, name="Emrax 208", max_torque=150, peak_efficiency=0.86, max_rpm=7000, max_power_kw=86.0, efficiency_csv=None):
         self.name = name
         self.max_torque = max_torque
         self.peak_efficiency = peak_efficiency
         self.max_power_w = max_power_kw * 1000.0
         self.max_omega = max_rpm * (2 * np.pi / 60)
         self.temp = 25.0
+
+        self.efficiency_map = None
+        if efficiency_csv:
+            try:
+                data = np.genfromtxt(efficiency_csv, delimiter=',')
+                # Data format: Speed (RPM), Torque (Nm), Efficiency
+
+                # --- Dynamic Data Decimation ---
+                # Calculate resolution based on range (Aiming for ~60 bins per dimension)
+                num_bins = 60.0
+                rpm_range = np.ptp(data[:, 0])
+                trq_range = np.ptp(data[:, 1])
+                
+                res_rpm = max(1.0, rpm_range / num_bins)
+                res_trq = max(0.1, trq_range / num_bins)
+                
+                rounded_coords = np.round(data[:, :2] / [res_rpm, res_trq]) * [res_rpm, res_trq]
+                unique_coords, inverse = np.unique(rounded_coords, axis=0, return_inverse=True)
+                avg_eff = np.bincount(inverse, weights=data[:, 2]) / np.bincount(inverse)
+                data_clean = np.column_stack((unique_coords, avg_eff))
+
+                self.efficiency_map = LinearNDInterpolator(data_clean[:, :2], data_clean[:, 2])
+                self._raw_data = data # Store for visualization
+                self._res_info = (res_rpm, res_trq)
+                print(f"[MotorInverter] {self.name}: Efficiency map loaded successfully.")
+            except Exception as e:
+                print(f"Warning: Could not load efficiency map from {efficiency_csv}: {e}")
+        else:
+            print(f"[MotorInverter] {self.name}: No map provided. Using peak efficiency {self.peak_efficiency}.")
 
     def get_mechanical_output(self, torque_request_nm, omega_rad_s):
         """
@@ -112,7 +142,20 @@ class MotorInverter:
         # Mechanical power: P = tau * omega
         p_mech = torque_actual * omega_rad_s
         
-        efficiency = self.peak_efficiency
+        # Determine efficiency using map or peak value
+        if self.efficiency_map:
+            rpm = abs(omega_rad_s) * 60 / (2 * np.pi)
+            torque_abs = abs(torque_actual)
+
+            efficiency = float(self.efficiency_map(rpm, torque_abs))
+            # Fallback to peak if lookup is outside the convex hull of provided data
+            if np.isnan(efficiency):
+                if not hasattr(self, '_warned_fallback'):
+                    print(f"DEBUG: {self.name} operating at {rpm:.0f} RPM / {torque_abs:.1f} Nm (outside CSV range). Falling back to peak efficiency.")
+                    self._warned_fallback = True
+                efficiency = self.peak_efficiency
+        else:
+            efficiency = self.peak_efficiency
         
         if p_mech < 0: # Regeneration
             p_elec = p_mech * efficiency
@@ -122,11 +165,8 @@ class MotorInverter:
                 # Adjust mechanical output to match the electrical power limit
                 p_mech = p_elec / efficiency
                 torque_actual = p_mech / omega_rad_s if abs(omega_rad_s) > 0.01 else 0.0
-
-        if p_mech >= 0:
+        else: # Drive
             p_elec = p_mech / efficiency
-        else:
-            p_elec = p_mech * efficiency  # Regen
             
         heat_gen_w = abs(p_elec - p_mech)
         
@@ -163,7 +203,8 @@ class PowertrainSystem:
             "Emrax 208", 
             max_torque=self.params.get('rear_motor_max_torque', 150.0), 
             max_rpm=self.params.get('rear_motor_max_rpm', 7000.0), 
-            max_power_kw=self.params.get('max_power_kw', 80.0)
+            max_power_kw=self.params.get('max_power_kw', 80.0),
+            efficiency_csv=self.params.get('rear_efficiency_csv', '/home/tadayal100/Powertrain_Sim/ai sim/emrax208_efficiency.csv')
         )
         self.rear_trans = Transmission(ratio=self.params.get('rear_gear_ratio', self.params.get('gear_ratio', 4.6))) # Chain
         
@@ -175,8 +216,8 @@ class PowertrainSystem:
             f_pwr = self.params.get('front_motor_max_power_kw', 15.0) # Configurable for study
             f_trq = self.params.get('front_motor_max_torque', 7.0)
             f_rpm = self.params.get('front_motor_max_rpm', 20000.0)
-            self.front_left = MotorInverter("Hub Motor", max_torque=f_trq, max_rpm=f_rpm, max_power_kw=f_pwr)
-            self.front_right = MotorInverter("Hub Motor", max_torque=f_trq, max_rpm=f_rpm, max_power_kw=f_pwr)
+            self.front_left = MotorInverter("Hub Motor", max_torque=f_trq, max_rpm=f_rpm, max_power_kw=f_pwr, efficiency_csv=self.params.get('front_efficiency_csv'))
+            self.front_right = MotorInverter("Hub Motor", max_torque=f_trq, max_rpm=f_rpm, max_power_kw=f_pwr, efficiency_csv=self.params.get('front_efficiency_csv'))
             self.front_trans = Transmission(ratio=self.params.get('front_gear_ratio', 13.4)) # Gearbox
 
     def step(self, motor_torque_demands, wheel_speeds, dt, battery_temp):
@@ -245,3 +286,70 @@ class PowertrainSystem:
         })
         
         return outputs
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+    import os
+
+    # Resolve CSV path relative to this file's location
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    csv_file = os.path.join(base_dir, 'emrax208_efficiency.csv')
+
+    if not os.path.exists(csv_file):
+        print(f"Error: Could not find efficiency file at {csv_file}")
+    else:
+        # Initialize Motor with the CSV
+        motor = MotorInverter(efficiency_csv=csv_file)
+
+        # Ensure interactive mode is handled correctly for the backend
+        plt.ion() if plt.isinteractive() else None
+
+        # Create a dense grid for plotting
+        rpm_grid = np.linspace(0, 7500, 200)
+        torque_grid = np.linspace(0, 160, 200)
+        RPM, TORQUE = np.meshgrid(rpm_grid, torque_grid)
+        
+        # Interpolate across the grid
+        EFF = motor.efficiency_map(RPM, TORQUE)
+
+        # Setup the plot with 1 row, 2 columns for 2D and 3D views
+        fig = plt.figure(figsize=(18, 8))
+        
+        # 1. 2D Contour Plot
+        ax1 = fig.add_subplot(1, 2, 1)
+        contour = ax1.contourf(RPM, TORQUE, EFF, levels=20, cmap='viridis')
+        cbar = fig.colorbar(contour, ax=ax1)
+        cbar.set_label('Efficiency (%)', rotation=270, labelpad=15)
+        ax1.scatter(motor._raw_data[:, 0], motor._raw_data[:, 1], c=motor._raw_data[:, 2], 
+                    cmap='viridis', edgecolors='white', linewidths=0.5, label='CSV Data Points')
+        ax1.set_title(f'{motor.name} Efficiency Contour', fontsize=14, fontweight='bold')
+        ax1.set_xlabel('Motor Speed (RPM)')
+        ax1.set_ylabel('Motor Torque (Nm)')
+        ax1.grid(True, linestyle='--', alpha=0.5)
+        ax1.legend()
+        
+        res_rpm, res_trq = motor._res_info
+        ax1.text(500, 140, f"* Dynamic Downsampling: {res_rpm:.1f}RPM / {res_trq:.1f}Nm bins\n* Piecewise Linear Topology", 
+                 bbox=dict(facecolor='white', alpha=0.8), fontsize=9)
+
+        # 2. 3D Surface Plot
+        ax2 = fig.add_subplot(1, 2, 2, projection='3d')
+        # Plot the surface - antialiased=True helps with visual clarity during rotation
+        surf = ax2.plot_surface(RPM, TORQUE, EFF, cmap='viridis', edgecolor='none', alpha=0.8, antialiased=True)
+        # Add 3D scatter to show raw points on the surface
+        ax2.scatter(motor._raw_data[:, 0], motor._raw_data[:, 1], motor._raw_data[:, 2], 
+                   c=motor._raw_data[:, 2], cmap='viridis', edgecolors='black', s=10)
+        
+        ax2.set_title(f'{motor.name} 3D Surface (Click & Drag to Rotate)', fontsize=14, fontweight='bold')
+        ax2.set_xlabel('RPM')
+        ax2.set_ylabel('Torque (Nm)')
+        ax2.set_zlabel('Efficiency')
+        ax2.view_init(elev=30, azim=225) # Standard angle to see the torque vs RPM curve clearly
+        ax2.mouse_init() # Explicitly initialize mouse interaction
+
+        plt.tight_layout()
+        # Save first, then show. In some backends, plt.show() clears the figure event loop on close.
+        fig.savefig('emrax208_efficiency_visual.png')
+        print(f"Plot saved to emrax208_efficiency_visual.png. Opening interactive window...")
+        plt.show(block=True)
