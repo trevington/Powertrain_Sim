@@ -345,10 +345,6 @@ if __name__ == "__main__":
         # Plot the surface - antialiased=True helps with visual clarity during rotation
         surf = ax2.plot_surface(RPM, TORQUE, EFF, cmap='viridis', edgecolor='none', alpha=0.8, antialiased=True)
 
-        # Project the 80kW limit onto the efficiency surface for 3D visualization
-        eff_at_limit = motor.efficiency_map(rpm_limit_x, torque_limit_y)
-        ax2.plot(rpm_limit_x, torque_limit_y, eff_at_limit, 'r-', linewidth=3, label='80kW Operating Limit')
-
         # Add 3D scatter to show raw points on the surface
         ax2.scatter(motor._raw_data[:, 0], motor._raw_data[:, 1], motor._raw_data[:, 2], 
                    c=motor._raw_data[:, 2], cmap='viridis', edgecolors='black', s=10)
@@ -359,7 +355,6 @@ if __name__ == "__main__":
         ax2.set_zlabel('Efficiency')
         ax2.view_init(elev=30, azim=225) # Standard angle to see the torque vs RPM curve clearly
         ax2.mouse_init() # Explicitly initialize mouse interaction
-        ax2.legend()
 
         plt.tight_layout()
         # Save first, then show. In some backends, plt.show() clears the figure event loop on close.
