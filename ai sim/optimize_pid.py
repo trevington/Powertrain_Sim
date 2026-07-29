@@ -3,8 +3,8 @@ import sys
 import os
 import numpy as np
 
-# Ensure we can import from the current directory
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Ensure we can import the simulation engine from the 'simulation' subdirectory
+sys.path.append(os.path.join(os.path.dirname(__file__), 'simulation'))
 from main import run_simulation
 
 def objective(trial):
@@ -13,6 +13,9 @@ def objective(trial):
         'steer_kp': trial.suggest_float('steer_kp', 0.1, 15.0, log=True),
         'steer_kd': trial.suggest_float('steer_kd', 0.01, 5.0, log=True),
         'lookahead_dist': trial.suggest_float('lookahead_dist', 1.0, 10.0),
+        'kp_v': trial.suggest_float('kp_v', 0.1, 10.0, log=True),
+        'ki_v': trial.suggest_float('ki_v', 0.01, 2.0, log=True),
+        'kd_v': trial.suggest_float('kd_v', 0.01, 2.0, log=True),
         'laps_to_run': 2 # Run fewer laps to speed up the optimization process
     }
     
@@ -39,14 +42,22 @@ def objective(trial):
     if max_cte > 2.0:
         stability_penalty = (max_cte ** 2) * 50.0
         
-    score = lap_time + (mean_cte * 20.0) + stability_penalty
+    score = lap_time + (mean_cte * 5.0) + stability_penalty
     
     return score
 
 if __name__ == "__main__":
     # Create an Optuna study to minimize the score
-    study = optuna.create_study(direction='minimize')
-    study.optimize(objective, n_trials=50)
+    # Using a SQLite storage backend enables multi-process parallelization
+    storage_name = "sqlite:///optuna_pid_study.db"
+    study = optuna.create_study(
+        study_name="pid_optimization",
+        storage=storage_name,
+        direction='minimize',
+        load_if_exists=True)
+
+    # n_jobs=-1 uses all available CPU cores
+    study.optimize(objective, n_trials=100, n_jobs=-1)
     
     print("\n" + "="*40)
     print("OPTIMIZATION RESULTS")

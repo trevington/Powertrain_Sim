@@ -8,6 +8,7 @@ from powertrain import PowertrainController
 from motor import PowertrainSystem
 from vd import VehicleDynamics
 from tb_thermal import TractiveBatteryThermal
+from scoring import FSAEScorer
 
 class SimulationEngine:
     def __init__(self, params=None):
@@ -17,14 +18,15 @@ class SimulationEngine:
             'max_lat_accel_g': 2.0753, 'max_brake_accel_g': 1.49, 'max_grip_accel_g': 0.9656,
             'max_v': 28.41, 'ambient_temp': 25.0, 'initial_battery_temp': 38.0,
             'laps_to_run': 22, 'motor_config': 'RWD', 'tv_kp': 600.0, 'tv_kd': 25.0,
-            'steer_kp': 0.8, 'steer_kd': 0.2, 'lookahead_dist': 4.0, 'lookahead_gain': 0.3,
+            'steer_kp': 0.497833, 'steer_kd': 0.966818, 'lookahead_dist': 1.204489, 'lookahead_gain': 0.3,
             'wheelbase': 1.535, 'mode': 'Endurance', 'h_cg': 0.3302, # 13 inches in meters
             'weight_dist_rear': 0.53, 'aero_dist_rear': 0.55,
             'cla': 3.5, # Assume a Lift Coefficient * Area (ClA) for downforce
             'rear_motor_max_torque': 150.0, 'rear_motor_max_rpm': 7000.0,
             'front_motor_max_power_kw': 10.0, 'front_motor_max_torque': 4.7,
             'front_motor_max_rpm': 20000.0, 'front_gear_ratio': 13.4,
-            'rear_efficiency_csv': 'emrax208_efficiency.csv'
+            'rear_efficiency_csv': 'emrax208_efficiency.csv',
+            'regen_enabled': True
         }
         if params: self.p.update(params)
         self.mode = self.p.get('mode', 'Endurance')
@@ -106,11 +108,11 @@ class SimulationEngine:
         self.history = {k: [] for k in ['time', 'v', 'v_target', 'cte', 'soc', 'temp', 'p_draw', 'throttle', 'x', 'y', 'voltage', 'soe', 't_front', 't_rear', 't_fl', 't_fr', 'redline', 'f_grip_f', 'f_grip_r', 'f_regen_f', 'f_regen_r']}
         self._redline_warned = False
         self.grip_limited_time = self.power_limited_time = self.braking_time = self.other_time = self.total_heat_j = self.total_aero_j = self.total_rr_j = self.total_accel_j = self.total_regen_j = 0.0
-        self.laps_completed, self.lap_times, self.lap_segment_indices, self.lap_start_time, self.sector_times = 0, [], [], 0.0, [0.0]*4
+        self.laps_completed, self.lap_times, self.lap_segment_indices, self.lap_start_time, self.sector_times, self.final_time = 0, [], [], 0.0, [0.0]*4, 0.0
 
     def run(self, verbose=True):
         if not self.waypoints: return
-        if verbose: print(f"Starting Simulation: {self.controller.motor_config} configuration...")
+        if verbose: print(f"Starting Simulation: {self.controller.motor_config} configuration | {self.mode} mode | Regen: {self.p['regen_enabled']}")
         wps_per_sector, prev_wp_idx = max(1, len(self.waypoints) // 4), 0
 
         start_x = self.state['x']
@@ -175,6 +177,20 @@ class SimulationEngine:
             for k, v in zip(self.history.keys(), values):
                 self.history[k].append(v)
 
+            # Safety Stops: Battery Temperature (> 60C) and Energy Depletion (SOE <= 0)
+            if self.battery_temp > 60.0 or motor_outputs.get('soe_pct', 0.0) <= 0.0:
+                self.final_time = t
+                if verbose:
+                    reason = "Overheat" if self.battery_temp > 60.0 else "Depletion"
+                    val = f"{self.battery_temp:.1f}°C" if reason == "Overheat" else "0%"
+                    print(f"--- CRITICAL: SIMULATION STOPPED - Battery {reason} ({val}) at t={t:.3f}s ---")
+                
+                # Ensure results/plotting logic works if car fails before lap 1
+                if not self.lap_times:
+                    self.lap_times.append(t)
+                    self.lap_segment_indices.append((0, t_idx))
+                break
+
             self.sector_times[min(self.driver.current_waypoint_idx // wps_per_sector, 3)] += self.dt
             if throttle_pct > 0.95:
                 if (self.p['max_power_kw'] * 1000.0) / (self.mass * max(v_curr, 1.0)) < self.p['max_grip_accel_g']*self.g: self.power_limited_time += self.dt
@@ -195,6 +211,11 @@ class SimulationEngine:
                 break
 
     def get_results(self, verbose=True, log_file=None):
+        scorer = FSAEScorer()
+        # Total energy = capacity * change in SOE
+        energy_used_wh = self.powertrain.battery.capacity_wh * (1.0 - (self.history['soe'][-1] / 100.0))
+        scores = scorer.calculate_endurance_score(self.final_time, energy_used_wh, self.laps_completed)
+
         if verbose:
             header = "ACCELERATION SUMMARY" if self.mode == 'Acceleration' else "LAP TIME SUMMARY"
             time_label = "75m Run Time:     " if self.mode == 'Acceleration' else "Best Lap Time:    "
@@ -208,6 +229,9 @@ class SimulationEngine:
             print(f"Max Battery Temp:    {max(self.history['temp']):.2f} °C")
             print(f"Final SoE:           {self.history['soe'][-1]:.2f} %")
             print(f"Energy Recovered:    {self.total_regen_j / 3600.0:.2f} Wh")
+            if self.mode == 'Endurance':
+                print(f"Endurance Points:    {scores['endurance_points']}")
+                print(f"Efficiency Points:   {scores['efficiency_points']}")
             if any(self.history['redline']):
                 print(f"Motor Redline:       REACHED")
 
@@ -223,7 +247,8 @@ class SimulationEngine:
             'mean_cte': np.mean(self.history['cte']) if self.history['cte'] else 999.0,
             'max_cte': max(self.history['cte']) if self.history['cte'] else 999.0,
             'laps_completed': self.laps_completed,
-            'total_regen_wh': self.total_regen_j / 3600.0
+            'total_regen_wh': self.total_regen_j / 3600.0,
+            'endurance_score': scores
         }
 
 def run_simulation(params=None, verbose=True, plot=True):
@@ -236,10 +261,10 @@ def run_simulation(params=None, verbose=True, plot=True):
         start, end = sim.lap_segment_indices[idx]
         best_lap = {k: v[start:end+1] for k, v in sim.history.items()}
         best_lap['time'] = [t - best_lap['time'][0] for t in best_lap['time']]
-        _plot_results([best_lap], [f"Best Lap (Lap {idx + 1})"], sim.waypoints, eb)
+        _plot_results([best_lap], [f"Best Lap (Lap {idx + 1})"], sim.waypoints, eb, session_data=sim.history)
     return res
 
-def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None):
+def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None, session_data=None):
     fig, axs = plt.subplots(8, 2, figsize=(14, 40))
     
     linestyles = ['-', '--', ':', '-.']
@@ -249,12 +274,6 @@ def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None):
         # Velocity Tracking
         axs[0, 0].plot(lap['time'], lap['v'], label=f'{label} Actual', linestyle=ls)
         axs[0, 0].plot(lap['time'], lap['v_target'], alpha=0.3, linestyle=ls, color='gray')
-        
-        # Temperature
-        axs[0, 1].plot(lap['time'], lap['temp'], label=label, linestyle=ls)
-        
-        # SOC
-        axs[1, 0].plot(lap['time'], lap['soc'], label=label, linestyle=ls)
         
         # Throttle
         axs[1, 1].plot(lap['time'], lap['throttle'], label=label, linestyle=ls)
@@ -290,12 +309,6 @@ def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None):
         v_err = np.array(lap['v_target']) - np.array(lap['v'])
         axs[3, 1].plot(lap['time'], v_err, label=label, linestyle=ls)
 
-        # Voltage
-        axs[4, 0].plot(lap['time'], lap['voltage'], label=label, linestyle=ls)
-        
-        # SOE
-        axs[4, 1].plot(lap['time'], lap['soe'], label=label, linestyle=ls)
-
         # Axle Torque Distribution (%)
         tf = np.abs(np.array(lap['t_front']))
         tr = np.abs(np.array(lap['t_rear']))
@@ -326,6 +339,20 @@ def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None):
         
         axs[7, 1].plot(lap['time'], lap['f_grip_r'], label=f'{label} Rear Grip Limit', color='red', linestyle='--')
         axs[7, 1].plot(lap['time'], lap['f_regen_r'], label=f'{label} Rear Regen Force', color='red', linestyle='-')
+
+    # Plot session-wide data for specific metrics (Temperature, SOC, Voltage, SOE)
+    if session_data:
+        axs[0, 1].plot(session_data['time'], session_data['temp'], label='Total Session', color='brown')
+        axs[1, 0].plot(session_data['time'], session_data['soc'], label='Total Session', color='green')
+        axs[4, 0].plot(session_data['time'], session_data['voltage'], label='Total Session', color='purple')
+        axs[4, 1].plot(session_data['time'], session_data['soe'], label='Total Session', color='darkgreen')
+    else:
+        # Fallback to plotting from laps_data if no session_data is provided
+        for lap, label, ls in zip(laps_data, labels, linestyles):
+            axs[0, 1].plot(lap['time'], lap['temp'], label=label, linestyle=ls)
+            axs[1, 0].plot(lap['time'], lap['soc'], label=label, linestyle=ls)
+            axs[4, 0].plot(lap['time'], lap['voltage'], label=label, linestyle=ls)
+            axs[4, 1].plot(lap['time'], lap['soe'], label=label, linestyle=ls)
 
     # Energy Loss Breakdown Pie Chart
     if energy_breakdown:
@@ -405,4 +432,4 @@ def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None):
     
 
 if __name__ == "__main__":
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 1, 'motor_config': 'RWD'})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 1, 'motor_config': 'RWD', 'regen_enabled': False})

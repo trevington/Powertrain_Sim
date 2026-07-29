@@ -16,6 +16,7 @@ class PowertrainController:
         self.params = params if params is not None else {}
         self.motor_config = motor_config
         self.max_power_w = max_power_kw * 1000.0
+        self.regen_enabled = self.params.get('regen_enabled', True)
         
         # Split ratios for AWD. These are candidates for OpenMDAO optimization.
         self.rear_bias = self.params.get('rear_bias', 0.85 if motor_config == 'AWD' else 1.0)
@@ -175,7 +176,7 @@ class PowertrainController:
         current_front_bias = self.front_bias + (0.30 * speed_factor)
         current_rear_bias = 1.0 - current_front_bias
         
-        if velocity > 1.4: # 5km/hr minimum regen speed
+        if self.regen_enabled and velocity > 1.4: # 5km/hr minimum regen speed
             f_regen_req_front = f_req_total * current_front_bias
             f_regen_req_rear = f_req_total * current_rear_bias
         else:

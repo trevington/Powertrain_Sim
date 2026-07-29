@@ -13,8 +13,8 @@ class Battery:
         self.v_nom_cell = self.params.get('v_nom_cell', 3.5)
         
         # Total pack resistance including junctions (rbj)
-        r_cell = self.params.get('r_cell', 0.0001)
-        self.r_internal = self.n_series * r_cell
+        self.r_cell = self.params.get('r_cell', 0.0001)
+        self.r_internal = self.n_series * self.r_cell
 
         self.last_heat_gen = 0.1            # Small initial heat to avoid zero rise at start
         self.peak_power_capability = 80000.0 # 80kW FSAE Limit
@@ -59,7 +59,7 @@ class Battery:
         # Dynamic DC Internal Resistance (DCIR) calculation using empirical polynomial
         ocv = v_cell_oc
         temp = battery_temp
-        rbj = self.params.get('rbj', self.r_internal)
+        rbj = self.params.get('rbj', self.r_cell)
         temp_rise = self.params.get('temp_rise', 1.0)
 
         dcir = rbj + (0.2935676 + 
@@ -72,17 +72,14 @@ class Battery:
                       -0.0001845216 * ocv**2 * temp + 
                       -0.000001707152 * ocv * temp**2 + 
                       -0.000000002083755 * temp**3) * temp_rise
-
-        voltage_drop = 0.0 #current * dcir
-        actual_v = v_oc - voltage_drop
         
         # Heat generation (P = I^2R)
-        heat_gen_w = (current**2) * dcir
+        heat_gen_w = ((current)**2) * dcir
         
         # Update state of charge
         self.energy_remaining_wh -= (power_w * (dt / 3600))
         
-        return actual_v, heat_gen_w
+        return v_oc, heat_gen_w
 
 class MotorInverter:
     """
