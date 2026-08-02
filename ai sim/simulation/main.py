@@ -18,7 +18,7 @@ class SimulationEngine:
             'max_lat_accel_g': 2.0753, 'max_brake_accel_g': 1.49, 'max_grip_accel_g': 0.9656,
             'max_v': 28.41, 'ambient_temp': 25.0, 'initial_battery_temp': 38.0,
             'laps_to_run': 22, 'motor_config': 'RWD', 'tv_kp': 600.0, 'tv_kd': 25.0,
-            'steer_kp': 0.497833, 'steer_kd': 0.966818, 'lookahead_dist': 1.204489, 'lookahead_gain': 0.3,
+            'steer_kp': 0.276638, 'steer_kd': 2.353120, 'lookahead_dist': 3.317667, 'lookahead_gain': 0.3,
             'wheelbase': 1.535, 'mode': 'Endurance', 'h_cg': 0.3302, # 13 inches in meters
             'weight_dist_rear': 0.53, 'aero_dist_rear': 0.55,
             'cla': 3.5, # Assume a Lift Coefficient * Area (ClA) for downforce
@@ -110,9 +110,16 @@ class SimulationEngine:
         self.grip_limited_time = self.power_limited_time = self.braking_time = self.other_time = self.total_heat_j = self.total_aero_j = self.total_rr_j = self.total_accel_j = self.total_regen_j = 0.0
         self.laps_completed, self.lap_times, self.lap_segment_indices, self.lap_start_time, self.sector_times, self.final_time = 0, [], [], 0.0, [0.0]*4, 0.0
 
-    def run(self, verbose=True):
+    def run(self, verbose=True, input_log=None):
+        """
+        Runs the simulation. 
+        :param input_log: Dictionary or DataFrame containing logged 'throttle', 'brake', and 'steering'
+        """
         if not self.waypoints: return
         if verbose: print(f"Starting Simulation: {self.controller.motor_config} configuration | {self.mode} mode | Regen: {self.p['regen_enabled']}")
+        if input_log is not None and verbose:
+            print("--- RUNNING IN LOG REPLAY VALIDATION MODE ---")
+            
         wps_per_sector, prev_wp_idx = max(1, len(self.waypoints) // 4), 0
 
         start_x = self.state['x']
@@ -127,7 +134,13 @@ class SimulationEngine:
                 self.laps_completed = 1
                 break
 
-            throttle_pct, _ = self.driver.get_commands(self.state, self.dt)
+            if input_log is not None:
+                # Replay inputs from the physical log
+                throttle_pct = input_log['throttle'][t_idx] if t_idx < len(input_log['throttle']) else 0.0
+                steering_angle = input_log['steering'][t_idx] if t_idx < len(input_log['steering']) else 0.0
+            else:
+                throttle_pct, _ = self.driver.get_commands(self.state, self.dt)
+
             Ld = max(self.p['lookahead_dist'], self.p['lookahead_gain'] * self.state['v'])
             lookahead_idx = self.driver.current_waypoint_idx
             for i in range(len(self.waypoints)):
@@ -432,4 +445,4 @@ def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None, sess
     
 
 if __name__ == "__main__":
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 1, 'motor_config': 'RWD', 'regen_enabled': False})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 4, 'motor_config': 'RWD', 'regen_enabled': False})

@@ -15,6 +15,7 @@ class Battery:
         # Total pack resistance including junctions (rbj)
         self.r_cell = self.params.get('r_cell', 0.0001)
         self.r_internal = self.n_series * self.r_cell
+        self.dcir_safety_factor = self.params.get('dcir_safety_factor', 1.0)
 
         self.last_heat_gen = 0.1            # Small initial heat to avoid zero rise at start
         self.peak_power_capability = 80000.0 # 80kW FSAE Limit
@@ -73,6 +74,9 @@ class Battery:
                       -0.000001707152 * ocv * temp**2 + 
                       -0.000000002083755 * temp**3) * temp_rise
         
+        # Apply safety factor to account for aging or worst-case cell variance
+        dcir *= self.dcir_safety_factor
+
         # Heat generation (P = I^2R)
         heat_gen_w = ((current)**2) * dcir
         
@@ -148,7 +152,7 @@ class MotorInverter:
             # Fallback to peak if lookup is outside the convex hull of provided data
             if np.isnan(efficiency):
                 if not hasattr(self, '_warned_fallback'):
-                    print(f"DEBUG: {self.name} operating at {rpm:.0f} RPM / {torque_abs:.1f} Nm (outside CSV range). Falling back to peak efficiency.")
+                    #print(f"DEBUG: {self.name} operating at {rpm:.0f} RPM / {torque_abs:.1f} Nm (outside CSV range). Falling back to peak efficiency.")
                     self._warned_fallback = True
                 efficiency = self.peak_efficiency
         else:

@@ -17,6 +17,7 @@ class PowertrainController:
         self.motor_config = motor_config
         self.max_power_w = max_power_kw * 1000.0
         self.regen_enabled = self.params.get('regen_enabled', True)
+        self.dcir_safety_factor = self.params.get('dcir_safety_factor', 1.5)
         
         # Split ratios for AWD. These are candidates for OpenMDAO optimization.
         self.rear_bias = self.params.get('rear_bias', 0.85 if motor_config == 'AWD' else 1.0)
