@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import csv
+import os
+import glob
 from scipy.interpolate import RegularGridInterpolator
 from driver import PathCommander
 from powertrain import PowertrainController
@@ -26,7 +28,8 @@ class SimulationEngine:
             'front_motor_max_power_kw': 10.0, 'front_motor_max_torque': 4.7,
             'front_motor_max_rpm': 20000.0, 'front_gear_ratio': 13.4,
             'rear_efficiency_csv': 'emrax208_efficiency.csv',
-            'regen_enabled': True
+            'regen_enabled': True,
+            'max_regen_power_kw': 2.0
         }
         if params: self.p.update(params)
         self.mode = self.p.get('mode', 'Endurance')
@@ -105,7 +108,11 @@ class SimulationEngine:
         initial_yaw = np.arctan2(self.waypoints[1][1] - self.waypoints[0][1], self.waypoints[1][0] - self.waypoints[0][0])
         self.state = {'x': self.waypoints[0][0], 'y': self.waypoints[0][1], 'yaw': initial_yaw, 'v': 0.0, 'yaw_rate': 0.0, 'a': 0.0, 'f_downforce': 0.0}
         self.vd.x, self.vd.y, self.wheel_speeds, self.battery_temp = self.state['x'], self.state['y'], {'rear': 0.0, 'front_left': 0.0, 'front_right': 0.0}, self.p['initial_battery_temp']
-        self.history = {k: [] for k in ['time', 'v', 'v_target', 'cte', 'soc', 'temp', 'p_draw', 'throttle', 'x', 'y', 'voltage', 'soe', 't_front', 't_rear', 't_fl', 't_fr', 'redline', 'f_grip_f', 'f_grip_r', 'f_regen_f', 'f_regen_r']}
+        self.history = {k: [] for k in [
+            'time', 'v', 'v_target', 'cte', 'soc', 'temp', 'p_draw', 'throttle', 'brake_pct', 
+            'x', 'y', 'voltage', 'current', 'motor_rpm', 'soe',
+            't_front', 't_rear', 't_fl', 't_fr', 'redline', 'f_grip_f', 'f_grip_r', 'f_regen_f', 'f_regen_r'
+        ]}
         self._redline_warned = False
         self.grip_limited_time = self.power_limited_time = self.braking_time = self.other_time = self.total_heat_j = self.total_aero_j = self.total_rr_j = self.total_accel_j = self.total_regen_j = 0.0
         self.laps_completed, self.lap_times, self.lap_segment_indices, self.lap_start_time, self.sector_times, self.final_time = 0, [], [], 0.0, [0.0]*4, 0.0
@@ -138,6 +145,7 @@ class SimulationEngine:
                 # Replay inputs from the physical log
                 throttle_pct = input_log['throttle'][t_idx] if t_idx < len(input_log['throttle']) else 0.0
                 steering_angle = input_log['steering'][t_idx] if t_idx < len(input_log['steering']) else 0.0
+                
             else:
                 throttle_pct, _ = self.driver.get_commands(self.state, self.dt)
 
@@ -162,7 +170,8 @@ class SimulationEngine:
 
             demands = self.controller.calculate_demands(throttle_pct, steering_angle, self.state, self.wheel_speeds, self.dt)
             motor_outputs = self.powertrain.step(demands['motor_torques'], self.wheel_speeds, self.dt, self.battery_temp)
-            self.battery_temp += self.thermal.get_temperature_delta(motor_outputs.get('battery_heat_w', 0.0), 0.0, self.dt) #self.thermal.calculate_heat_removed(self.battery_temp, self.state['v'])
+            heat_removed = self.thermal.calculate_heat_removed(self.battery_temp, self.state['v'])
+            self.battery_temp += self.thermal.get_temperature_delta(motor_outputs.get('battery_heat_w', 0.0), heat_removed, self.dt)
             self.total_heat_j += motor_outputs['total_heat_w'] * self.dt
 
             is_redline = motor_outputs.get('motor_redline', False)
@@ -179,11 +188,19 @@ class SimulationEngine:
             if v_curr > v_prev: self.total_accel_j += self.mass * ((v_curr - v_prev) / self.dt) * v_curr * self.dt
             if motor_outputs['p_net_w'] < 0: self.total_regen_j += abs(motor_outputs['p_net_w']) * self.dt
 
+            # Reference calculations based on CSV log parameters
+            v_terminal = motor_outputs.get('voltage', 350.0)
+            current_a = motor_outputs['p_net_w'] / v_terminal if v_terminal > 10 else 0.0
+            # Simple motor RPM calc: Wheel rad/s -> RPM * gear ratio (Assuming 8-inch radius wheel)
+            motor_rpm = (v_curr / (2 * np.pi * 0.2032)) * 60 * self.p['gear_ratio'] if v_curr > 0.1 else 0.0
+            
             curr_wp = self.waypoints[self.driver.current_waypoint_idx]
+
             values = [
                 t, v_curr, curr_wp[2], np.sqrt((self.state['x'] - curr_wp[0])**2 + (self.state['y'] - curr_wp[1])**2),
-                motor_outputs['soc_pct'], self.battery_temp, motor_outputs['p_net_w'], throttle_pct, self.state['x'], self.state['y'],
-                motor_outputs.get('voltage', 0.0), motor_outputs.get('soe_pct', 0.0), motor_outputs.get('fl_wheel_torque', 0.0) + motor_outputs.get('fr_wheel_torque', 0.0),
+                motor_outputs['soc_pct'], self.battery_temp, motor_outputs['p_net_w'], throttle_pct, demands['mechanical_brake_pct'],
+                self.state['x'], self.state['y'], v_terminal, current_a, motor_rpm, motor_outputs.get('soe_pct', 0.0),
+                motor_outputs.get('fl_wheel_torque', 0.0) + motor_outputs.get('fr_wheel_torque', 0.0),
                 motor_outputs.get('rear_axle_torque', 0.0), motor_outputs.get('fl_wheel_torque', 0.0), motor_outputs.get('fr_wheel_torque', 0.0),
                 1.0 if is_redline else 0.0, demands['f_grip_f'], demands['f_grip_r'], demands['f_regen_f'], demands['f_regen_r']
             ]
@@ -222,6 +239,151 @@ class SimulationEngine:
                 self.final_time = t
                 if len(self.lap_segment_indices) < self.laps_completed: self.lap_segment_indices.append((self.lap_segment_indices[-1][1] + 1 if self.laps_completed > 1 else 0, t_idx))
                 break
+
+    def validate_thermal_from_log(self, csv_path, show_plot=True):
+        """
+        Validates the thermal model by replaying electrical data from a CSV log.
+        """
+        log_data = []
+        with open(csv_path, 'r') as f:
+            rows = list(csv.DictReader(f))
+            # Find the first non-zero battery temperature to avoid comparing against sensor lag/zeros
+            first_valid_temp = next((float(row['Bat_Max_C']) for row in rows if float(row['Bat_Max_C']) > 0), 25.0)
+            
+            for row in rows:
+                t_raw = float(row['Bat_Max_C'])
+                log_data.append({
+                    'time': float(row['Time_ms']) / 1000.0,
+                    'p_pack': float(row['Pack_Power_W']),
+                    'v_bat': float(row['Bat_Volts']),
+                    't_actual': t_raw if t_raw > 0 else first_valid_temp,
+                    'soc': float(row.get('Bat_SOC_%', 100.0)) / 100.0,
+                    'v_vehicle': (float(row.get('DTI_MotorRPM', 0)) * 2 * np.pi * 0.2032) / (60.0 * self.p['gear_ratio'])
+                })
+
+        # Sync start time
+        t_start = log_data[0]['time']
+        sim_temp = log_data[0]['t_actual']
+        self.p['initial_battery_temp'] = sim_temp
+        self._reset_state()
+        
+        results = {'time': [], 't_sim': [], 't_actual': [], 'p_pack': [], 'r_int': []}
+        non_zero_power_time = 0.0
+
+        for i in range(1, len(log_data)):
+            dt = log_data[i]['time'] - log_data[i-1]['time']
+            if dt <= 0: continue
+
+            p_pack = log_data[i]['p_pack']
+            v_bat = max(log_data[i]['v_bat'], 10.0)
+            current = p_pack / v_bat
+            
+            if abs(p_pack) > 1.0: # Track time where battery is under load (>1W)
+                non_zero_power_time += dt
+
+            # Calculate internal heat generation: Q = I^2 * R
+            # Pointing to the empirical DCIR calculation in motor.py for accuracy
+            r_int = self.powertrain.battery.get_internal_resistance(log_data[i]['soc'], sim_temp) 
+            heat_w = (current**2) * r_int
+            
+            # Update simulation temperature
+            v_ms = log_data[i]['v_vehicle']
+            heat_removed = self.thermal.calculate_heat_removed(sim_temp, v_ms)
+            sim_temp += self.thermal.get_temperature_delta(heat_w, heat_removed, dt)
+
+            results['time'].append(log_data[i]['time'] - t_start)
+            results['t_sim'].append(sim_temp)
+            results['t_actual'].append(log_data[i]['t_actual'])
+            results['p_pack'].append(p_pack)
+            results['r_int'].append(r_int)
+
+        error = np.array(results['t_sim']) - np.array(results['t_actual'])
+        mean_err = np.mean(np.abs(error))
+        max_err = np.max(np.abs(error))
+
+        # Calculate Temperature Delta per active second (Heating Rate)
+        total_delta_t = log_data[-1]['t_actual'] - log_data[0]['t_actual']
+        heating_rate = total_delta_t / non_zero_power_time if non_zero_power_time > 0 else 0
+        
+        rel_path = os.path.join(os.path.basename(os.path.dirname(csv_path)), os.path.basename(csv_path))
+        print(f"Validation Complete [{rel_path}]: Mean Error: {mean_err:.3f}°C | Max Error: {max_err:.3f}°C | Heating Rate: {heating_rate:.5f}°C/s")
+        
+        if show_plot:
+            # Plotting Validation
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10), sharex=True)
+            ax1.plot(results['time'], results['t_actual'], 'r--', label='Physical Log (Bat_Max_C)')
+            ax1.plot(results['time'], results['t_sim'], 'b-', label='Simulation (TractiveBatteryThermal)')
+            ax1.set_ylabel('Temperature (°C)')
+            ax1.set_title(f'Thermal Model Validation: {csv_path}')
+            ax1.legend()
+            ax1.grid(True)
+            
+            ax2.plot(results['time'], results['r_int'], 'g-', label='Simulated Pack Resistance')
+            ax2.set_ylabel('Resistance (Ohms)')
+            ax2.set_xlabel('Time (s)')
+            ax2.legend()
+            ax2.grid(True)
+            plt.tight_layout()
+            plt.savefig('thermal_validation.png')
+            plt.show()
+            
+        return {
+            'log_name': os.path.basename(csv_path),
+            'log_folder': os.path.dirname(csv_path),
+            'mean_error': mean_err,
+            'max_error': max_err,
+            'heating_rate': heating_rate,
+            'non_zero_power_time': non_zero_power_time
+        }
+
+    def run_thermal_batch_study(self, logs_dir):
+        """
+        Runs thermal validation on all CSV files in logs_dir and plots a comparison.
+        """
+        all_logs = glob.glob(os.path.join(logs_dir, "**/*.CSV"), recursive=True) + \
+                   glob.glob(os.path.join(logs_dir, "**/*.csv"), recursive=True)
+        
+        if not all_logs:
+            print(f"No log files found in {logs_dir}")
+            return
+
+        summary = []
+        for log_path in all_logs:
+            try:
+                res = self.validate_thermal_from_log(log_path, show_plot=False)
+                summary.append(res)
+            except Exception as e:
+                print(f"Skipping {os.path.basename(log_path)}: {e}")
+
+        if not summary: return
+
+        summary.sort(key=lambda x: x['mean_error'])
+        names = [f"{os.path.basename(s['log_folder'])}/{s['log_name']}" for s in summary]
+        mean_errs = [s['mean_error'] for s in summary]
+        max_errs = [s['max_error'] for s in summary]
+        heating_rates = [s['heating_rate'] for s in summary]
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
+        x = np.arange(len(names))
+        
+        ax1.bar(x - 0.2, mean_errs, 0.4, label='Mean Absolute Error (°C)', color='skyblue')
+        ax1.bar(x + 0.2, max_errs, 0.4, label='Max Absolute Error (°C)', color='salmon')
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(names, rotation=30, ha='right')
+        ax1.set_ylabel('Temperature Error (°C)')
+        ax1.set_title('Battery Thermal Model Accuracy Comparison Across All Logs')
+        ax1.legend(); ax1.grid(axis='y', linestyle='--', alpha=0.7)
+
+        ax2.bar(x, heating_rates, color='lightgreen', label='Heating Rate (°C/s non-zero pwr)')
+        ax2.set_xticks(x)
+        ax2.set_xticklabels(names, rotation=30, ha='right')
+        ax2.set_ylabel('Rate (°C / s)')
+        ax2.set_title('Normalized Heating Characteristic (Delta T / Active Work Duration)')
+        ax2.legend(); ax2.grid(axis='y', linestyle='--', alpha=0.7)
+
+        plt.tight_layout()
+        plt.savefig('thermal_batch_comparison.png')
+        plt.show()
 
     def get_results(self, verbose=True, log_file=None):
         scorer = FSAEScorer()
@@ -443,6 +605,13 @@ def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None, sess
     plt.savefig('simulation_results.png')
     #plt.show()
     
-
+    
 if __name__ == "__main__":
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 4, 'motor_config': 'RWD', 'regen_enabled': False})
+    # Create the simulation engine
+    sim = SimulationEngine()
+    # Run the thermal validation study against all physical logs in the folder
+    logs_dir = '/home/tadayal100/Powertrain_Sim/ai sim/logs/'
+    sim.run_thermal_batch_study(logs_dir)
+
+    '''log = '/home/tadayal100/Powertrain_Sim/ai sim/logs/5-30-test-weekend-logs/LOG_037.CSV'
+    sim.validate_thermal_from_log(log)'''

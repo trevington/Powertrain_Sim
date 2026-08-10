@@ -20,21 +20,25 @@ class TractiveBatteryThermal:
         self.cell_mass = self.params.get('cell_mass', 0.2667)
         self.cell_count = self.params.get('num_cells', 140)
 
-        # Fan-specific constants (Internal cooling for CR30)
+        # Internal Fan-specific constants (CR30/CR31 Monocoque)
+        # Cooling is provided by an array of 10-12 internal fans.
         self.h_fan = self.params.get('h_fan', 0.0)       # Forced convection coefficient from internal fans (W/m^2*K)
         self.cell_surface_area = self.params.get('cell_surface_area', 1.1) # Estimated total surface area (m^2)
 
-    def calculate_heat_removed(self, battery_temp):
+    def calculate_heat_removed(self, battery_temp, velocity=None):
         """
         Calculates the heat removal rate in Watts.
+        Note: Since the car is a monocoque, vehicle velocity plays no role in
+        cooling. All heat rejection is via internal fans displacing air.
         
         :param battery_temp: Current temperature of the battery pack (Celsius).
+        :param velocity: Ignored (monocoque chassis blocks external airflow).
         :return: Heat removed in Watts.
         """
         # Delta T between the battery (source) and ambient air (sink)
         delta_t = battery_temp - self.ambient_temp
-
-        # Fan cooling is constant regardless of vehicle speed (internal airflow)
+        
+        # Heat removal is constant based on internal fan performance
         heat_removed_w = self.h_fan * self.cell_surface_area * delta_t
         
         # We assume a passive system that cannot cool below ambient.
@@ -50,5 +54,6 @@ class TractiveBatteryThermal:
         :return: change in temperature (Celsius).
         """
         net_heat_flow = heat_gen_w - heat_removed_w
-        # dT = (Q_net * dt) / (m * Cp)
-        return (net_heat_flow * dt) / (self.cell_mass * self.cell_cp)
+        # dT = (Q_net * dt) / (m_total * Cp)
+        total_mass = self.cell_mass * self.cell_count
+        return (net_heat_flow * dt) / (total_mass * self.cell_cp)

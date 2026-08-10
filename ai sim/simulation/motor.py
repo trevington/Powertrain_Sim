@@ -44,41 +44,58 @@ class Battery:
             3.868, 3.892, 4.2
         ])
 
+        # Maximum regen power
+        self.max_regen_power_w = self.params.get('max_regen_power_kw', 80.0) * 1000.0
+
+    def get_internal_resistance(self, soc_decimal, temp):
+        """
+        Calculates the pack internal resistance using the empirical polynomial.
+        
+        :param soc_decimal: State of Charge (0.0 to 1.0).
+        :param temp: Battery temperature in Celsius.
+        :return: Pack internal resistance in Ohms.
+        """
+        soe = soc_decimal * 100.0
+        v_cell_oc = np.interp(soe, self._soe_data, self._v_cell_data)
+        
+        ocv = v_cell_oc
+        rbj = self.params.get('rbj', self.r_cell)
+        temp_rise = self.params.get('temp_rise', 1.0)
+
+        # Empirical polynomial for cell DCIR based on OCV and Temperature
+        cell_dcir = rbj + (0.2935676 + 
+                           -0.171888 * ocv + 
+                           -0.00373033 * temp + 
+                           0.03292212 * ocv**2 + 
+                           0.001604118 * ocv * temp + 
+                           0.000009206928 * temp**2 + 
+                           -0.001941274 * ocv**3 + 
+                           -0.0001845216 * ocv**2 * temp + 
+                           -0.000001707152 * ocv * temp**2 + 
+                           -0.000000002083755 * temp**3) * temp_rise
+        
+        # Total pack resistance = cell resistance * series count * safety/aging factor
+        return cell_dcir * self.n_series * self.dcir_safety_factor
+
     def draw_power(self, power_w, dt, battery_temp):
         """
         Calculates voltage drop and energy consumption.
         :return: (actual_voltage, heat_gen_w)
         """
+        # Cap regeneration power if it's enabled and the power is negative
+        if power_w < 0:
+            power_w = max(power_w, -self.max_regen_power_w)
+
         # Calculate Open Circuit Voltage (Voc) based on current SOE
         soe = (self.energy_remaining_wh / self.capacity_wh) * 100
         v_cell_oc = np.interp(soe, self._soe_data, self._v_cell_data)
         v_oc = v_cell_oc * self.n_series
 
-        # Calculate current using Voc (approximate)
-        current = power_w / v_oc
-
-        # Dynamic DC Internal Resistance (DCIR) calculation using empirical polynomial
-        ocv = v_cell_oc
-        temp = battery_temp
-        rbj = self.params.get('rbj', self.r_cell)
-        temp_rise = self.params.get('temp_rise', 1.0)
-
-        dcir = rbj + (0.2935676 + 
-                      -0.171888 * ocv + 
-                      -0.00373033 * temp + 
-                      0.03292212 * ocv**2 + 
-                      0.001604118 * ocv * temp + 
-                      0.000009206928 * temp**2 + 
-                      -0.001941274 * ocv**3 + 
-                      -0.0001845216 * ocv**2 * temp + 
-                      -0.000001707152 * ocv * temp**2 + 
-                      -0.000000002083755 * temp**3) * temp_rise
+        # Use the unified resistance calculation
+        pack_r = self.get_internal_resistance(soe / 100.0, battery_temp)
         
-        # Apply safety factor to account for aging or worst-case cell variance
-        dcir *= self.dcir_safety_factor
-
-        # Heat generation (P = I^2R)
-        heat_gen_w = ((current)**2) * dcir
+        current = power_w / v_oc
+        heat_gen_w = (current**2) * pack_r
         
         # Update state of charge
         self.energy_remaining_wh -= (power_w * (dt / 3600))
@@ -90,7 +107,7 @@ class MotorInverter:
     Combined Motor and Inverter model.
     Handles the Emrax 208 or custom front hub motors.
     """
-    def __init__(self, name="Emrax 208", max_torque=150, peak_efficiency=0.86, max_rpm=7000, max_power_kw=86.0, efficiency_csv=None):
+    def __init__(self, name="Emrax 208", max_torque=150, peak_efficiency=0.86, max_rpm=7000, max_power_kw=56.0, efficiency_csv=None):
         self.name = name
         self.max_torque = max_torque
         self.peak_efficiency = peak_efficiency
