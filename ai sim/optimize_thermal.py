@@ -20,9 +20,17 @@ def objective(trial):
     }
 
     sim = SimulationEngine(params)
-    logs_dir = '/home/tadayal100/Powertrain_Sim/ai sim/logs/'
-    all_logs = glob.glob(os.path.join(logs_dir, "**/*.CSV"), recursive=True) + \
-               glob.glob(os.path.join(logs_dir, "**/*.csv"), recursive=True)
+    # Use path relative to this script to avoid absolute path issues
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    logs_dir = os.path.join(script_dir, 'logs')
+    
+    all_logs = sorted(list(set(glob.glob(os.path.join(logs_dir, "**/*.CSV"), recursive=True) + \
+                               glob.glob(os.path.join(logs_dir, "**/*.csv"), recursive=True))))
+
+    if not all_logs:
+        # This is a major reason for the 1e6 return
+        print(f"Trial {trial.number}: No log files found in {logs_dir}")
+        return 1e6
 
     errors = []
     for log_path in all_logs:
@@ -31,7 +39,9 @@ def objective(trial):
             res = sim.validate_thermal_from_log(log_path, show_plot=False)
             # We want to minimize Mean Absolute Error (MAE)
             errors.append(res['mean_error'])
-        except Exception:
+        except Exception as e:
+            # Log the specific error so you can see if it's a KeyError (missing columns)
+            print(f"Trial {trial.number}: Error processing {os.path.basename(log_path)}: {e}")
             continue
 
     if not errors:
