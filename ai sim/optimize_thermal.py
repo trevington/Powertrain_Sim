@@ -41,10 +41,11 @@ def objective(trial):
     return np.mean(errors)
 
 if __name__ == "__main__":
-    study = optuna.create_study(direction='minimize')
+    storage_name = "sqlite:///optuna_thermal_study.db"
+    study = optuna.create_study(direction='minimize', storage=storage_name, load_if_exists=True)
     
     print("Starting Thermal Model Parameter Optimization...")
-    study.optimize(objective, n_trials=50)
+    study.optimize(objective, n_trials=100, n_jobs=-1)
 
     print("\n" + "="*40)
     print("OPTIMIZED THERMAL PARAMETERS")
