@@ -16,13 +16,13 @@ class TractiveBatteryThermal:
         self.ambient_temp = ambient_temp
         
         # Thermal model constants
-        self.cell_cp = self.params.get('battery_cp', 955.0) # Specific heat capacity of the cells (J/kg*K)
+        self.cell_cp = self.params.get('battery_cp', 1377.265173) # Specific heat capacity of the cells (J/kg*K)
         self.cell_mass = self.params.get('cell_mass', 0.2667)
         self.cell_count = self.params.get('num_cells', 140)
 
         # Internal Fan-specific constants (CR30/CR31 Monocoque)
         # Cooling is provided by an array of 10-12 internal fans.
-        self.h_fan = self.params.get('h_fan', 0.0)       # Forced convection coefficient from internal fans (W/m^2*K)
+        self.h_fan = self.params.get('h_fan', 0.717338)       # Forced convection coefficient from internal fans (W/m^2*K)
         self.cell_surface_area = self.params.get('cell_surface_area', 1.1) # Estimated total surface area (m^2)
 
     def calculate_heat_removed(self, battery_temp, velocity=None):

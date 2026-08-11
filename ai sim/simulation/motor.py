@@ -15,7 +15,7 @@ class Battery:
         # Total pack resistance including junctions (rbj)
         self.r_cell = self.params.get('r_cell', 0.0001)
         self.r_internal = self.n_series * self.r_cell
-        self.dcir_safety_factor = self.params.get('dcir_safety_factor', 1.0)
+        self.dcir_safety_factor = self.params.get('dcir_safety_factor', 1.096226)
 
         self.last_heat_gen = 0.1            # Small initial heat to avoid zero rise at start
         self.peak_power_capability = 80000.0 # 80kW FSAE Limit

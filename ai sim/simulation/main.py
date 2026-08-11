@@ -29,7 +29,10 @@ class SimulationEngine:
             'front_motor_max_rpm': 20000.0, 'front_gear_ratio': 13.4,
             'rear_efficiency_csv': 'emrax208_efficiency.csv',
             'regen_enabled': True,
-            'max_regen_power_kw': 2.0
+            'max_regen_power_kw': 2.0,
+            'dcir_safety_factor': 1.5, # optmized 1.096226
+            'battery_cp': 1377.265173,
+            'h_fan': 0.717338
         }
         if params: self.p.update(params)
         self.mode = self.p.get('mode', 'Endurance')
