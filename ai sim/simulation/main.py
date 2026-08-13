@@ -16,7 +16,7 @@ class SimulationEngine:
     def __init__(self, params=None):
         self.track_file = 'tracks/endurance.csv'
         self.p = {
-            'num_cells': 140, 'max_power_kw': 80.0, 'gear_ratio': 4.6,
+            'num_cells': 130, 'max_power_kw': 80.0, 'gear_ratio': 4.6,
             'max_lat_accel_g': 2.0753, 'max_brake_accel_g': 1.49, 'max_grip_accel_g': 0.9656,
             'max_v': 28.41, 'ambient_temp': 25.0, 'initial_battery_temp': 38.0,
             'laps_to_run': 22, 'motor_config': 'RWD', 'tv_kp': 600.0, 'tv_kd': 25.0,
@@ -426,7 +426,8 @@ class SimulationEngine:
             'max_cte': max(self.history['cte']) if self.history['cte'] else 999.0,
             'laps_completed': self.laps_completed,
             'total_regen_wh': self.total_regen_j / 3600.0,
-            'endurance_score': scores
+            'endurance_score': scores,
+            'energy_used_wh': energy_used_wh
         }
 
 def run_simulation(params=None, verbose=True, plot=True):
@@ -611,10 +612,13 @@ def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None, sess
     
 if __name__ == "__main__":
     # Create the simulation engine
-    sim = SimulationEngine()
+    #sim = SimulationEngine()
     # Run the thermal validation study against all physical logs in the folder
-    logs_dir = '/home/tadayal100/Powertrain_Sim/ai sim/logs/'
-    sim.run_thermal_batch_study(logs_dir)
+    #logs_dir = '/home/tadayal100/Powertrain_Sim/ai sim/logs/'
+    #sim.run_thermal_batch_study(logs_dir)
+
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': False, 'num_cells': 130})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': False, 'num_cells': 140})
 
     '''log = '/home/tadayal100/Powertrain_Sim/ai sim/logs/5-30-test-weekend-logs/LOG_037.CSV'
     sim.validate_thermal_from_log(log)'''

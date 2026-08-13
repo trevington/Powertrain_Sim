@@ -100,7 +100,11 @@ class Battery:
         # Update state of charge
         self.energy_remaining_wh -= (power_w * (dt / 3600))
         
-        return v_oc, heat_gen_w
+        voltage_drop = current * pack_r
+
+        v = v_oc - voltage_drop
+
+        return v, heat_gen_w
 
 class MotorInverter:
     """
