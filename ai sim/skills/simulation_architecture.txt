@@ -1,14 +1,19 @@
+Simulation Engine (main.py)
+- Conductor of the simulation.
+- Pre-calculates race-line velocity profiles (Curvature-based limits).
+- Orchestrates the interaction between Driver, Powertrain, and Physics.
+
 Path Commander (driver.py)
 - "drives" car
-- Uses feedback loop to move car to next waypoint
+- Uses Stanley Controller for lateral steering and PID for longitudinal speed.
 - Allows us to simulate car on multiple courses (Endurance, Acceleration, Autocross, Skidpad)
 - Outputs: throttle % (to powertrain controller sim), steering angle (to powertrain controller sim)
 
 Powertrain controller Sim (powertrain.py)
 - Controls Powertrain
 - Ensures FSAE rules are followed during simulation
-- Allocates power to motor(s)
-- Should simulate realistic vehicle Commander
+- Distributes torque between AWD/RWD axles.
+- Implements Torque Vectoring (TV) and Traction Control (TCS).
 - Outputs: Power demand (to tractive battery electrical sim), motor power distribution (to motor & inverter sim)
 
 Tractive Battery Electrical Sim (motor.py)
@@ -24,14 +29,12 @@ Motor & Inverter Sim (motor.py)
 - Simulates shaft output at operating point
 - Calculates energy lost, efficiency and heat generation
 - Optimize car for motor performance
-- Outputs: heat generation (to Motor & inverter thermal sim), shaft output (to Vehicle dynamics sim)
+- Outputs: heat generation, shaft output (to Vehicle dynamics sim)
 
-Motor & Inverter thermal sim (motor.py)
-- Simulates radiator motor & inverter cooling
-- Calculates radiator sizing
-- Motor & Inverter don't need to be at steady state Temperature, but the temperature shouldn't exceed 60C during endurance
-- Motor & Inverter temperatures cannot exceed 50C
-- Outputs: cooling capability (to motor & inverter sim)
+Motor & Inverter thermal logic (motor.py)
+- Currently tracks instantaneous heat generation (Total Heat = Motor Loss + Inverter Loss).
+- Monitors 60C/50C threshold limits for components.
+- Note: A full standalone radiator sizing class is a future addition.
 
 Vehicle dynamics Sim (vd.py)
 - Should be one file so that it can be swapped when VD team creates model

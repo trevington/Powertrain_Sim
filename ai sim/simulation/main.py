@@ -23,13 +23,15 @@ class SimulationEngine:
             'steer_kp': 0.276638, 'steer_kd': 2.353120, 'lookahead_dist': 3.317667, 'lookahead_gain': 0.3,
             'wheelbase': 1.535, 'mode': 'Endurance', 'h_cg': 0.3302, # 13 inches in meters
             'weight_dist_rear': 0.53, 'aero_dist_rear': 0.55,
-            'cla': 3.5, # Assume a Lift Coefficient * Area (ClA) for downforce
+            'downforce_coeff': 2.45, # N/(m/s)^2, derived from your snippet's downforceMod
+            'fan_downforce_n': 0.0,  # Static downforce from fans (N)
             'rear_motor_max_torque': 150.0, 'rear_motor_max_rpm': 7000.0,
             'front_motor_max_power_kw': 10.0, 'front_motor_max_torque': 4.7,
             'front_motor_max_rpm': 20000.0, 'front_gear_ratio': 13.4,
             'rear_efficiency_csv': 'emrax208_efficiency.csv',
             'regen_enabled': True,
             'max_regen_power_kw': 2.0,
+            'system_efficiency': 0.89,
             'dcir_safety_factor': 1.5, # optmized 1.096226
             'battery_cp': 1377.265173,
             'h_fan': 0.717338
@@ -68,34 +70,48 @@ class SimulationEngine:
         waypoints = []
         max_lat_accel, max_brake_accel, max_grip_accel = self.p['max_lat_accel_g']*self.g, self.p['max_brake_accel_g']*self.g, self.p['max_grip_accel_g']*self.g
         for i in range(len(coords)):
-            p1, p2, p3 = np.array(coords[i-1]), np.array(coords[i]), np.array(coords[(i+1)%len(coords)])
-            a, b, c = np.linalg.norm(p1-p2), np.linalg.norm(p2-p3), np.linalg.norm(p3-p1)
-            tri_area = 0.5 * abs(p1[0]*(p2[1]-p3[1]) + p2[0]*(p3[1]-p1[1]) + p3[0]*(p1[1]-p2[1]))
-            curvature = 0.0
+            p_prev, p_curr, p_next = np.array(coords[i-1]), np.array(coords[i]), np.array(coords[(i+1)%len(coords)])
+            a, b, c = np.linalg.norm(p_prev-p_curr), np.linalg.norm(p_curr-p_next), np.linalg.norm(p_next-p_prev)
+            tri_area = 0.5 * abs(p_prev[0]*(p_curr[1]-p_next[1]) + p_curr[0]*(p_next[1]-p_prev[1]) + p_next[0]*(p_prev[1]-p_curr[1]))
+            
+            # Menger Curvature calculation
             if tri_area > 0.005:
                 radius = (a * b * c) / (4 * tri_area)
                 curvature = 1.0 / radius
                 target_v = min(np.sqrt(max_lat_accel * radius), self.p['max_v'])
-            else: target_v = self.p['max_v']
-            waypoints.append([coords[i][0], coords[i][1], target_v, curvature])
+            else: 
+                target_v, curvature = self.p['max_v'], 0.0
+            waypoints.append([p_curr[0], p_curr[1], target_v, curvature])
 
+        # Backward Pass: Ensure the car can slow down for upcoming corners
         for _ in range(2):
             for i in range(len(waypoints) - 1, -1, -1):
                 next_idx = (i + 1) % len(waypoints)
-                dist = np.linalg.norm(np.array(waypoints[next_idx][:2]) - np.array(waypoints[i][:2]))
+                wp_next = waypoints[next_idx]
+                wp_curr = waypoints[i]
+                dist = np.hypot(wp_next[0] - wp_curr[0], wp_next[1] - wp_curr[1])
+                
+                # Using absolute max_brake_accel as a positive value for the limit
                 v_allowed = np.sqrt(waypoints[next_idx][2]**2 + 2 * max_brake_accel * dist)
-                if waypoints[i][2] > v_allowed: waypoints[i][2] = v_allowed
+                waypoints[i][2] = min(waypoints[i][2], v_allowed)
 
+        # Forward Pass: Account for acceleration limits and aero/rolling resistance
         for _ in range(2):
             for i in range(len(waypoints)):
                 next_idx = (i + 1) % len(waypoints)
-                v_curr = max(waypoints[i][2], 1.0)
-                dynamic_max_accel = max(0.0, min(max_grip_accel, (self.p['max_power_kw']*1000.0)/(self.mass*v_curr)) - (np.interp(v_curr, self.aero_v_ms, self.aero_drag_n, left=0.0)/self.mass) - np.interp(v_curr, self.rr_v_ms, self.rr_coeff)*self.g)
-                dist = np.linalg.norm(np.array(waypoints[i][:2]) - np.array(waypoints[next_idx][:2]))
-                v_allowed = np.sqrt(waypoints[i][2]**2 + 2 * dynamic_max_accel * dist)
-                if waypoints[next_idx][2] > v_allowed: waypoints[next_idx][2] = v_allowed
+                v_curr = max(waypoints[i][2], 1.0) # Avoid division by zero
+                
+                p_prop = (self.p['max_power_kw'] * 1000.0) / (self.mass * v_curr) # F = P/v
+                f_drag = np.interp(v_curr, self.aero_v_ms, self.aero_drag_n, left=0.0)
+                f_rr = 0.015 * self.mass * self.g
 
-        v_smooth = np.convolve(np.pad(np.array([wp[2] for wp in waypoints]), 2, mode='wrap'), np.ones(5)/5, mode='valid')
+                dynamic_max_accel = max(0.0, min(max_grip_accel, p_prop) - (f_drag / self.mass) - (f_rr / self.mass))
+                
+                dist = np.hypot(waypoints[next_idx][0] - waypoints[i][0], waypoints[next_idx][1] - waypoints[i][1])
+                v_allowed = np.sqrt(waypoints[i][2]**2 + 2 * dynamic_max_accel * dist)
+                waypoints[next_idx][2] = min(waypoints[next_idx][2], v_allowed)
+
+        v_smooth = np.convolve(np.pad([wp[2] for wp in waypoints], 2, mode='wrap'), np.ones(5)/5, mode='valid')
         for i in range(len(waypoints)): waypoints[i][2] = v_smooth[i]
         return waypoints
 
@@ -127,6 +143,7 @@ class SimulationEngine:
         """
         if not self.waypoints: return
         if verbose: print(f"Starting Simulation: {self.controller.motor_config} configuration | {self.mode} mode | Regen: {self.p['regen_enabled']}")
+        if verbose: print(self.p)
         if input_log is not None and verbose:
             print("--- RUNNING IN LOG REPLAY VALIDATION MODE ---")
             
@@ -150,30 +167,20 @@ class SimulationEngine:
                 steering_angle = input_log['steering'][t_idx] if t_idx < len(input_log['steering']) else 0.0
                 
             else:
-                throttle_pct, _ = self.driver.get_commands(self.state, self.dt)
-
-            Ld = max(self.p['lookahead_dist'], self.p['lookahead_gain'] * self.state['v'])
-            lookahead_idx = self.driver.current_waypoint_idx
-            for i in range(len(self.waypoints)):
-                idx = (self.driver.current_waypoint_idx + i) % len(self.waypoints)
-                if np.linalg.norm(np.array(self.waypoints[idx][:2]) - np.array([self.state['x'], self.state['y']])) >= Ld:
-                    lookahead_idx = idx
-                    break
-            target_wp = self.waypoints[lookahead_idx]
-            alpha = (np.arctan2(target_wp[1] - self.state['y'], target_wp[0] - self.state['x']) - self.state['yaw'] + np.pi) % (2*np.pi) - np.pi
-            steering_angle = np.arctan2(2.0 * self.p['wheelbase'] * np.sin(alpha), Ld)
+                # The driver handles both throttle AND steering logic (Stanley Controller)
+                throttle_pct, steering_angle = self.driver.get_commands(self.state, self.dt)
 
             # Calculate instantaneous acceleration and aero downforce for the controller
-            # Acceleration from the previous step is used to avoid algebraic loops
             v_prev = self.history['v'][-1] if self.history['v'] else 0.0
             self.state['a'] = (self.state['v'] - v_prev) / self.dt if t > 0 else 0.0
             
-            # F_downforce = 0.5 * rho * ClA * v^2
-            self.state['f_downforce'] = 0.5 * 1.225 * self.p.get('cla', 3.0) * self.state['v']**2
+            # Updated Aero Model: Quadratic Downforce + Fan Downforce
+            v_curr = self.state['v']
+            self.state['f_downforce'] = (self.p['downforce_coeff'] * v_curr**2) + self.p['fan_downforce_n']
+            f_drag_lookup = np.interp(v_curr, self.aero_v_ms, self.aero_drag_n, left=0.0)
 
             demands = self.controller.calculate_demands(throttle_pct, steering_angle, self.state, self.wheel_speeds, self.dt)
             motor_outputs = self.powertrain.step(demands['motor_torques'], self.wheel_speeds, self.dt, self.battery_temp)
-            heat_removed = self.thermal.calculate_heat_removed(self.battery_temp, self.state['v'])
             self.battery_temp += self.thermal.get_temperature_delta(motor_outputs.get('battery_heat_w', 0.0), heat_removed, self.dt)
             self.total_heat_j += motor_outputs['total_heat_w'] * self.dt
 
@@ -183,10 +190,19 @@ class SimulationEngine:
                 self._redline_warned = True
 
             v_prev = self.state['v']
-            self.state, self.wheel_speeds = self.vd.step({'rear_axle_torque': motor_outputs.get('rear_axle_torque', 0), 'fl_wheel_torque': motor_outputs.get('fl_wheel_torque', 0), 'fr_wheel_torque': motor_outputs.get('fr_wheel_torque', 0), 'mechanical_brake_pct': demands['mechanical_brake_pct']}, steering_angle, self.dt)
+            
+            # Pass external drag to VD to ensure consistency with lookup table
+            physics_in = {
+                'rear_axle_torque': motor_outputs.get('rear_axle_torque', 0),
+                'fl_wheel_torque': motor_outputs.get('fl_wheel_torque', 0),
+                'fr_wheel_torque': motor_outputs.get('fr_wheel_torque', 0),
+                'mechanical_brake_pct': demands['mechanical_brake_pct'],
+                'external_drag': f_drag_lookup
+            }
+            self.state, self.wheel_speeds = self.vd.step(physics_in, steering_angle, self.dt)
 
             v_curr = self.state['v']
-            self.total_aero_j += np.interp(v_curr, self.aero_v_ms, self.aero_drag_n, left=0.0) * v_curr * self.dt
+            self.total_aero_j += f_drag_lookup * v_curr * self.dt
             self.total_rr_j += np.interp(v_curr, self.rr_v_ms, self.rr_coeff) * self.mass * self.g * v_curr * self.dt
             if v_curr > v_prev: self.total_accel_j += self.mass * ((v_curr - v_prev) / self.dt) * v_curr * self.dt
             if motor_outputs['p_net_w'] < 0: self.total_regen_j += abs(motor_outputs['p_net_w']) * self.dt
@@ -407,9 +423,11 @@ class SimulationEngine:
             print(f"Max Battery Temp:    {max(self.history['temp']):.2f} °C")
             print(f"Final SoE:           {self.history['soe'][-1]:.2f} %")
             print(f"Energy Recovered:    {self.total_regen_j / 3600.0:.2f} Wh")
-            if self.mode == 'Endurance':
+            print(f"Energy Used:         {energy_used_wh:.2f} Wh")
+            print(f"Energy Remaining:     {self.powertrain.battery.capacity_wh - energy_used_wh:.2f} Wh")
+            '''if self.mode == 'Endurance':
                 print(f"Endurance Points:    {scores['endurance_points']}")
-                print(f"Efficiency Points:   {scores['efficiency_points']}")
+                print(f"Efficiency Points:   {scores['efficiency_points']}")'''
             if any(self.history['redline']):
                 print(f"Motor Redline:       REACHED")
 
@@ -617,8 +635,8 @@ if __name__ == "__main__":
     #logs_dir = '/home/tadayal100/Powertrain_Sim/ai sim/logs/'
     #sim.run_thermal_batch_study(logs_dir)
 
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': False, 'num_cells': 130})
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': False, 'num_cells': 140})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': False, 'num_cells': 97})
+
 
     '''log = '/home/tadayal100/Powertrain_Sim/ai sim/logs/5-30-test-weekend-logs/LOG_037.CSV'
     sim.validate_thermal_from_log(log)'''

@@ -48,8 +48,13 @@ class VehicleDynamics:
         max_brake_force = self.mass * self.g * self.max_brake_accel_g
         f_braking = physics_inputs.get('mechanical_brake_pct', 0) * max_brake_force
 
-        # 3. Calculate Resistive Forces
-        f_drag = 0.5 * self.rho * self.cd * self.area * self.v**2
+        # 3. Calculate Resistive Forces 
+        # Prioritize external drag (from lookup table) if provided
+        if 'external_drag' in physics_inputs:
+            f_drag = physics_inputs['external_drag']
+        else:
+            f_drag = 0.5 * self.rho * self.cd * self.area * self.v**2
+            
         f_rolling = self.mass * self.g * self.crr if self.v > 0.1 else 0.0
 
         # 4. Longitudinal Dynamics (F = ma)

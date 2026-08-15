@@ -73,10 +73,11 @@ class PathCommander:
         min_dist = float('inf')
         closest_idx = self.current_waypoint_idx
 
+        # Localized search window to prevent jumping to distant parts of the track
         for i in range(search_range):
             idx = (self.current_waypoint_idx + i) % len(self.waypoints)
-            wp_pos = np.array([self.waypoints[idx][0], self.waypoints[idx][1]])
-            dist = np.linalg.norm(curr_pos - wp_pos)
+            wp_x, wp_y = self.waypoints[idx][0], self.waypoints[idx][1]
+            dist = np.hypot(state['x'] - wp_x, state['y'] - wp_y)
             
             if dist < min_dist:
                 min_dist = dist
@@ -131,15 +132,20 @@ class PathCommander:
         # Point for cross-track error (Nearest point)
         closest_wp = self.waypoints[self.current_waypoint_idx]
         curvature = closest_wp[3] if len(closest_wp) > 3 else 0.0
-        prev_closest_wp = self.waypoints[(self.current_waypoint_idx - 1) % len(self.waypoints)]
+        
+        # Helper to get path heading between two points
+        def get_path_yaw(idx1, idx2, fallback_yaw):
+            p1 = self.waypoints[idx1]
+            p2 = self.waypoints[idx2]
+            dx, dy = p1[0] - p2[0], p1[1] - p2[1]
+            if np.hypot(dx, dy) < 1e-3:
+                return fallback_yaw
+            return np.arctan2(dy, dx)
 
         # Local path orientation at the car's current position for accurate CTE projection
-        local_path_yaw = np.arctan2(closest_wp[1] - prev_closest_wp[1], closest_wp[0] - prev_closest_wp[0]) if (closest_wp[1] != prev_closest_wp[1] or closest_wp[0] != prev_closest_wp[0]) else state['yaw']
-        
-        # 1. Heading error: The difference between path direction and vehicle orientation
-        path_yaw = np.arctan2(target_wp[1] - prev_target_wp[1], target_wp[0] - prev_target_wp[0]) if (target_wp[1] != prev_target_wp[1] or target_wp[0] != prev_target_wp[0]) else state['yaw']
-        heading_error = path_yaw - state['yaw']
-        heading_error = (heading_error + np.pi) % (2 * np.pi) - np.pi
+        local_path_yaw = get_path_yaw(self.current_waypoint_idx, (self.current_waypoint_idx - 1) % len(self.waypoints), state['yaw'])
+        path_yaw = get_path_yaw(target_idx, (target_idx - 1) % len(self.waypoints), state['yaw'])
+        heading_error = (path_yaw - state['yaw'] + np.pi) % (2 * np.pi) - np.pi
         
         # 2. Signed Cross-track error calculated using LOCAL path tangent
         dx = state['x'] - closest_wp[0]
@@ -176,7 +182,8 @@ class PathCommander:
         raw_steering = np.clip(combined_steering, -np.radians(25), np.radians(25))
 
         # More responsive filter (Alpha = 0.6) to reduce phase lag in corners
-        smoothed_steering = (0.6 * raw_steering) + (0.4 * self.prev_steering)
+        alpha_steer = 0.6
+        smoothed_steering = (alpha_steer * raw_steering) + ((1.0 - alpha_steer) * self.prev_steering)
         self.prev_steering = smoothed_steering
         
         return smoothed_steering
