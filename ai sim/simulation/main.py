@@ -205,7 +205,8 @@ class SimulationEngine:
                 'mechanical_brake_pct': demands['mechanical_brake_pct'],
                 'external_drag': f_drag_lookup
             }
-            self.state, self.wheel_speeds = self.vd.step(physics_in, steering_angle, self.dt)
+            new_state, self.wheel_speeds = self.vd.step(physics_in, steering_angle, self.dt)
+            self.state.update(new_state)
 
             v_curr = self.state['v']
             self.total_aero_j += f_drag_lookup * v_curr * self.dt

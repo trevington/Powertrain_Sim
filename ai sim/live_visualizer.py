@@ -182,7 +182,8 @@ class LiveVisualizer:
                     'mechanical_brake_pct': demands['mechanical_brake_pct'],
                     'external_drag': f_drag_lookup
                 }
-                self.sim.state, self.sim.wheel_speeds = self.sim.vd.step(physics_in, steering_angle, self.sim.dt)
+                new_state, self.sim.wheel_speeds = self.sim.vd.step(physics_in, steering_angle, self.sim.dt)
+                self.sim.state.update(new_state)
                 t += self.sim.dt
 
             # Determine limit state for dynamic car coloring and HUD
