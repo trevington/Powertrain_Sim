@@ -247,8 +247,16 @@ class SimulationEngine:
                 break
 
             self.sector_times[min(self.driver.current_waypoint_idx // wps_per_sector, 3)] += self.dt
-            if throttle_pct > 0.95:
-                if (self.p['max_power_kw'] * 1000.0) / (self.mass * max(v_curr, 1.0)) < self.p['max_grip_accel_g']*self.g: self.power_limited_time += self.dt
+            
+            # Determine limiting state (Longitudinal + Lateral)
+            a_lat = abs(v_curr**2 * np.tan(steering_angle) / self.p['wheelbase'])
+            a_lat_limit = self.p['max_lat_accel_g'] * self.g
+
+            if a_lat > 0.95 * a_lat_limit:
+                self.grip_limited_time += self.dt
+            elif throttle_pct > 0.95:
+                if (self.p['max_power_kw'] * 1000.0) / (self.mass * max(v_curr, 1.0)) < self.p['max_grip_accel_g'] * self.g:
+                    self.power_limited_time += self.dt
                 else: self.grip_limited_time += self.dt
             elif throttle_pct < -0.05: self.braking_time += self.dt
             else: self.other_time += self.dt
