@@ -16,7 +16,10 @@ def objective(trial):
         'kp_v': trial.suggest_float('kp_v', 0.1, 10.0, log=True),
         'ki_v': trial.suggest_float('ki_v', 0.01, 2.0, log=True),
         'kd_v': trial.suggest_float('kd_v', 0.01, 2.0, log=True),
-        'laps_to_run': 2 # Run fewer laps to speed up the optimization process
+        'laps_to_run': 4, # Run fewer laps to speed up the optimization process
+        'regen_enabled': False,
+        'motor_config': 'RWD',
+        'num_cells': 130
     }
     
     # Run simulation in headless mode

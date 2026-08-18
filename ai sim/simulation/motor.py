@@ -80,7 +80,7 @@ class Battery:
     def draw_power(self, power_w, dt, battery_temp):
         """
         Calculates voltage drop and energy consumption.
-        :return: (actual_voltage, heat_gen_w)
+        :return: (actual_voltage, heat_gen_w, applied_power_w)
         """
         # Cap regeneration power if it's enabled and the power is negative
         if power_w < 0:
@@ -104,7 +104,7 @@ class Battery:
 
         v = v_oc - voltage_drop
 
-        return v, heat_gen_w
+        return v, heat_gen_w, power_w
 
 class MotorInverter:
     """
@@ -293,13 +293,13 @@ class PowertrainSystem:
         powertrain_losses += 1000 # Considered a 'loss' relative to tractive work
 
         # Battery Simulation
-        actual_v, batt_heat = self.battery.draw_power(total_elec_power, dt, battery_temp)
+        actual_v, batt_heat, applied_p_w = self.battery.draw_power(total_elec_power, dt, battery_temp)
         # total_heat_gen includes powertrain + battery internal resistance
         total_heat_gen = powertrain_losses + batt_heat
         
         soe_val = (self.battery.energy_remaining_wh / self.battery.capacity_wh) * 100
         outputs.update({
-            'p_net_w': total_elec_power,
+            'p_net_w': applied_p_w,
             'voltage': actual_v,
             'total_heat_w': total_heat_gen,      # System-wide for energy breakdown
             'battery_heat_w': batt_heat,        # Battery-only for thermal model

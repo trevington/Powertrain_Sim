@@ -19,9 +19,9 @@ class PathCommander:
         self.look_ahead_v_scale = self.params.get('look_ahead_v_scale', 0.25)
         
         # PID Gains for Longitudinal Control (Throttle/Brake)
-        self.kp_v = self.params.get('kp_v', 0.152322)
-        self.ki_v = self.params.get('ki_v', 1.480862)
-        self.kd_v = self.params.get('kd_v', 0.702146)
+        self.kp_v = self.params.get('kp_v', 0.14851)
+        self.ki_v = self.params.get('ki_v', 1.584)
+        self.kd_v = self.params.get('kd_v', 0.5489)
         self.v_error_int = 0
         self.v_int_limit = self.params.get('v_int_limit', 0.5)
         self.prev_v_error = 0
@@ -108,7 +108,7 @@ class PathCommander:
         
         # 2. Alpha Filter (Low-Pass): Smooths output to prevent rapid chatter.
         # This significantly reduces "chatter" between throttle and braking
-        alpha = 0.2
+        alpha = 0.1
         self.prev_throttle = (alpha * raw_throttle) + ((1.0 - alpha) * self.prev_throttle)
         
         return self.prev_throttle

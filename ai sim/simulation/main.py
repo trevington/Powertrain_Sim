@@ -83,6 +83,11 @@ class SimulationEngine:
                 target_v, curvature = self.p['max_v'], 0.0
             waypoints.append([p_curr[0], p_curr[1], target_v, curvature])
 
+        self.track_min_x = min(w[0] for w in waypoints)
+        self.track_max_x = max(w[0] for w in waypoints)
+        self.track_min_y = min(w[1] for w in waypoints)
+        self.track_max_y = max(w[1] for w in waypoints)
+
         # Backward Pass: Ensure the car can slow down for upcoming corners
         for _ in range(2):
             for i in range(len(waypoints) - 1, -1, -1):
@@ -181,6 +186,7 @@ class SimulationEngine:
 
             demands = self.controller.calculate_demands(throttle_pct, steering_angle, self.state, self.wheel_speeds, self.dt)
             motor_outputs = self.powertrain.step(demands['motor_torques'], self.wheel_speeds, self.dt, self.battery_temp)
+            heat_removed = self.thermal.calculate_heat_removed(self.battery_temp, v_curr)
             self.battery_temp += self.thermal.get_temperature_delta(motor_outputs.get('battery_heat_w', 0.0), heat_removed, self.dt)
             self.total_heat_j += motor_outputs['total_heat_w'] * self.dt
 
@@ -440,12 +446,14 @@ class SimulationEngine:
         res_time = self.final_time if self.mode == 'Acceleration' else (min(self.lap_times) if self.lap_times else 9999.0)
         return {
             'best_lap_time': res_time,
+            'total_session_time': self.final_time,
             'mean_cte': np.mean(self.history['cte']) if self.history['cte'] else 999.0,
             'max_cte': max(self.history['cte']) if self.history['cte'] else 999.0,
             'laps_completed': self.laps_completed,
             'total_regen_wh': self.total_regen_j / 3600.0,
             'endurance_score': scores,
-            'energy_used_wh': energy_used_wh
+            'energy_used_wh': energy_used_wh,
+            'final_temp': self.battery_temp
         }
 
 def run_simulation(params=None, verbose=True, plot=True):
@@ -635,7 +643,7 @@ if __name__ == "__main__":
     #logs_dir = '/home/tadayal100/Powertrain_Sim/ai sim/logs/'
     #sim.run_thermal_batch_study(logs_dir)
 
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': False, 'num_cells': 97})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': True, 'num_cells': 130, 'max_regen_power_kw': 20.0, 'max_power_kw': 30.0})
 
 
     '''log = '/home/tadayal100/Powertrain_Sim/ai sim/logs/5-30-test-weekend-logs/LOG_037.CSV'
