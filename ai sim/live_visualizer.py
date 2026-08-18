@@ -25,6 +25,11 @@ class LiveVisualizer:
         # History for G-G Diagram trail
         self.gg_history = deque(maxlen=40)
 
+        # Manual control state
+        self.manual_mode = False
+        self.manual_throttle = 0.0
+        self.manual_steering = 0.0
+
         # Scaling math for track visualization
         padding = 60
         track_w = self.sim.track_max_x - self.sim.track_min_x
@@ -50,7 +55,8 @@ class LiveVisualizer:
             (f"Net Power: {p_net/1000:.1f} kW", (255, 200, 0)),
             (f"Battery: {soc:.1f} %", (0, 255, 100)),
             (f"Temp: {temp:.1f} C", (255, 100, 0) if temp < 55 else (255, 0, 0)),
-            (f"Status: {limit_status}", (200, 200, 200))
+            (f"Status: {limit_status}", (200, 200, 200)),
+            (f"Mode: {'MANUAL' if self.manual_mode else 'AUTO'}", (255, 255, 0) if self.manual_mode else (0, 200, 255))
         ]
         for i, (text, color) in enumerate(stats):
             surf = self.font.render(text, True, color)
@@ -159,10 +165,31 @@ class LiveVisualizer:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_m:
+                        self.manual_mode = not self.manual_mode
+                        print(f"Control Mode: {'MANUAL' if self.manual_mode else 'AUTO'}")
+
+            # Process Keyboard Inputs
+            keys = pygame.key.get_pressed()
+            if self.manual_mode:
+                # Throttle/Brake processing
+                if keys[pygame.K_UP]: self.manual_throttle = min(1.0, self.manual_throttle + 0.1)
+                elif keys[pygame.K_DOWN]: self.manual_throttle = max(-1.0, self.manual_throttle - 0.1)
+                else: self.manual_throttle *= 0.8 # Decay to zero
+
+                # Steering processing
+                steer_limit = np.radians(23.5)
+                if keys[pygame.K_LEFT]: self.manual_steering = min(steer_limit, self.manual_steering + 0.05)
+                elif keys[pygame.K_RIGHT]: self.manual_steering = max(-steer_limit, self.manual_steering - 0.05)
+                else: self.manual_steering *= 0.7 # Return to center
 
             # Run multiple simulation steps to maintain real-time speed
             for _ in range(steps_per_frame):
-                throttle_pct, steering_angle = self.sim.driver.get_commands(self.sim.state, self.sim.dt)
+                if self.manual_mode:
+                    throttle_pct, steering_angle = self.manual_throttle, self.manual_steering
+                else:
+                    throttle_pct, steering_angle = self.sim.driver.get_commands(self.sim.state, self.sim.dt)
                 
                 v_prev = self.sim.state['v']
                 v_curr = v_prev # approximated for aero
