@@ -26,7 +26,7 @@ class LiveVisualizer:
         self.gg_history = deque(maxlen=40)
 
         # Manual control state
-        self.manual_mode = False
+        self.manual_mode = True
         self.manual_throttle = 0.0
         self.manual_steering = 0.0
 
@@ -193,7 +193,7 @@ class LiveVisualizer:
                 
                 v_prev = self.sim.state['v']
                 v_curr = v_prev # approximated for aero
-                self.sim.state['f_downforce'] = (self.sim.p['downforce_coeff'] * v_curr**2) + self.sim.p['fan_downforce_n']
+                self.sim.state['f_downforce'] = (self.sim.p['downforce_coeff'] * v_curr**2)
                 f_drag_lookup = np.interp(v_curr, self.sim.aero_v_ms, self.sim.aero_drag_n, left=0.0)
 
                 demands = self.sim.controller.calculate_demands(throttle_pct, steering_angle, self.sim.state, self.sim.wheel_speeds, self.sim.dt)
@@ -310,7 +310,7 @@ class LiveVisualizer:
 
 if __name__ == "__main__":
     viz = LiveVisualizer({
-        'motor_config': 'RWD',IN
+        'motor_config': 'RWD',
         'regen_enabled': True,
         'max_regen_power_kw': 20.0
     })

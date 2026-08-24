@@ -12,29 +12,32 @@ from vd import VehicleDynamics
 from tb_thermal import TractiveBatteryThermal
 from scoring import FSAEScorer
 
+'''
+NOTES:
+- Regen not fully working (issues with max regen power)
+- Torque vectoring not implemented yet
+'''
+
 class SimulationEngine:
     def __init__(self, params=None):
         self.track_file = 'tracks/endurance.csv'
         self.p = {
-            'num_cells': 130, 'max_power_kw': 80.0, 'gear_ratio': 4.6,
-            'max_lat_accel_g': 2.0753, 'max_brake_accel_g': 1.49, 'max_grip_accel_g': 0.9656,
-            'max_v': 28.41, 'ambient_temp': 25.0, 'initial_battery_temp': 38.0,
-            'laps_to_run': 22, 'motor_config': 'RWD', 'tv_kp': 600.0, 'tv_kd': 25.0,
-            'steer_kp': 0.276638, 'steer_kd': 2.353120, 'lookahead_dist': 3.317667, 'lookahead_gain': 0.3,
-            'wheelbase': 1.535, 'mode': 'Endurance', 'h_cg': 0.3302, # 13 inches in meters
-            'weight_dist_rear': 0.53, 'aero_dist_rear': 0.55,
-            'downforce_coeff': 2.45, # N/(m/s)^2, derived from your snippet's downforceMod
-            'fan_downforce_n': 0.0,  # Static downforce from fans (N)
-            'rear_motor_max_torque': 150.0, 'rear_motor_max_rpm': 7000.0,
-            'front_motor_max_power_kw': 10.0, 'front_motor_max_torque': 4.7,
-            'front_motor_max_rpm': 20000.0, 'front_gear_ratio': 13.4,
-            'rear_efficiency_csv': 'emrax208_efficiency.csv',
-            'regen_enabled': True,
+            'num_cells': 130, 'max_power_kw': 80.0, 'gear_ratio': 4.6, 
+            'max_lat_accel_g': 2.0753, 'max_brake_accel_g': 1.49, 'max_grip_accel_g': 0.9656, # NOTE: taken from  CR30 tractive battery spreadsheet
+            'max_v': 28.41, 'ambient_temp': 25.0, 'initial_battery_temp': 38.0, # NOTE: taken from CR30 tractive battery spreadsheet
+            'laps_to_run': 22, 'motor_config': 'RWD',
+            'steer_kp': 0.276638, 'steer_kd': 2.353120, 'lookahead_dist': 3.317667, 'lookahead_gain': 0.3, # NOTE: optimized values (optimize_driver.py)
+            'wheelbase': 1.535, 'mode': 'Endurance', 'h_cg': 0.3302, # 13in NOTE: from erick accel sim
+            'weight_dist_rear': 0.53, 'aero_dist_rear': 0.55, # NOTE: from erick accel sim
+            'downforce_coeff': 2.45, # N/(m/s)^2, NOTE: from erick accel sim
+            'rear_motor_max_torque': 150.0, 'rear_motor_max_rpm': 7000.0, # Emrax 208
+            'front_motor_max_power_kw': 10.0, 'front_motor_max_torque': 4.7, 'front_motor_max_rpm': 20000.0, 'front_gear_ratio': 13.4, # MotorCAD, 480V 25A sim (NOTE: needs to be updated aaa)
+            'rear_efficiency_csv': 'emrax208_efficiency.csv', # NOTE: from Emrax 208 datasheet
+            'regen_enabled': False,
             'max_regen_power_kw': 2.0,
-            'system_efficiency': 0.89,
-            'dcir_safety_factor': 1.5, # optmized 1.096226
-            'battery_cp': 1377.265173,
-            'h_fan': 0.717338
+            'dcir_safety_factor': 1.5 * 1.096226, # NOTE: optmized 1.096226 (optimize_thermal.py)
+            'battery_cp': 1377.265173, # NOTE: optimized 1377.265173 (optimize_thermal.py) 
+            'h_fan': 0.717338 # NOTE: optimized 0.71738 (optimize_thermal.py)
         }
         if params: self.p.update(params)
         self.mode = self.p.get('mode', 'Endurance')
@@ -179,9 +182,9 @@ class SimulationEngine:
             v_prev = self.history['v'][-1] if self.history['v'] else 0.0
             self.state['a'] = (self.state['v'] - v_prev) / self.dt if t > 0 else 0.0
             
-            # Updated Aero Model: Quadratic Downforce + Fan Downforce
+            # Updated Aero Model: Quadratic Downforce
             v_curr = self.state['v']
-            self.state['f_downforce'] = (self.p['downforce_coeff'] * v_curr**2) + self.p['fan_downforce_n']
+            self.state['f_downforce'] = (self.p['downforce_coeff'] * v_curr**2)
             f_drag_lookup = np.interp(v_curr, self.aero_v_ms, self.aero_drag_n, left=0.0)
 
             demands = self.controller.calculate_demands(throttle_pct, steering_angle, self.state, self.wheel_speeds, self.dt)
@@ -652,8 +655,8 @@ if __name__ == "__main__":
     #logs_dir = '/home/tadayal100/Powertrain_Sim/ai sim/logs/'
     #sim.run_thermal_batch_study(logs_dir)
 
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': True, 'num_cells': 130, 'max_regen_power_kw': 20.0, 'max_power_kw': 30.0})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': True, 'num_cells': 130, 'max_regen_power_kw': 2.0, 'max_power_kw': 30.0})
 
-
+    # NOTE: change log file directory
     '''log = '/home/tadayal100/Powertrain_Sim/ai sim/logs/5-30-test-weekend-logs/LOG_037.CSV'
     sim.validate_thermal_from_log(log)'''
