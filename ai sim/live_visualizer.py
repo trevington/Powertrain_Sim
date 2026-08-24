@@ -191,44 +191,25 @@ class LiveVisualizer:
                 else:
                     throttle_pct, steering_angle = self.sim.driver.get_commands(self.sim.state, self.sim.dt)
                 
-                v_prev = self.sim.state['v']
-                v_curr = v_prev # approximated for aero
-                self.sim.state['f_downforce'] = (self.sim.p['downforce_coeff'] * v_curr**2)
-                f_drag_lookup = np.interp(v_curr, self.sim.aero_v_ms, self.sim.aero_drag_n, left=0.0)
-
-                demands = self.sim.controller.calculate_demands(throttle_pct, steering_angle, self.sim.state, self.sim.wheel_speeds, self.sim.dt)
-                motor_outputs = self.sim.powertrain.step(demands['motor_torques'], self.sim.wheel_speeds, self.sim.dt, self.sim.battery_temp)
-                
-                heat_removed = self.sim.thermal.calculate_heat_removed(self.sim.battery_temp, v_curr)
-                self.sim.battery_temp += self.sim.thermal.get_temperature_delta(motor_outputs.get('battery_heat_w', 0.0), heat_removed, self.sim.dt)
-                
-                physics_in = {
-                    'rear_axle_torque': motor_outputs.get('rear_axle_torque', 0),
-                    'fl_wheel_torque': motor_outputs.get('fl_wheel_torque', 0),
-                    'fr_wheel_torque': motor_outputs.get('fr_wheel_torque', 0),
-                    'mechanical_brake_pct': demands['mechanical_brake_pct'],
-                    'external_drag': f_drag_lookup
-                }
-                new_state, self.sim.wheel_speeds = self.sim.vd.step(physics_in, steering_angle, self.sim.dt)
-                self.sim.state.update(new_state)
-                t += self.sim.dt
+                self.sim.step(throttle_pct, steering_angle, verbose=False)
+                t = self.sim.t
 
             # Determine limit state for dynamic car coloring and HUD
             v_curr = self.sim.state['v']
+            demands = self.sim.last_demands
+            motor_outputs = self.sim.last_motor_outputs
+            
             limit_status = "Normal"
             car_color = (0, 150, 255)  # Default Blue
 
             # Calculate Accelerations for G-G and Limits
-            # Lateral Acceleration (signed for the G-G plot)
             ay_ms2 = (v_curr**2 * np.tan(steering_angle) / self.sim.p['wheelbase'])
-            ax_ms2 = (v_curr - v_prev) / self.sim.dt if self.sim.dt > 0 else 0
-            
-            ax_g = ax_ms2 / 9.81
+            ax_g = self.sim.state['a'] / 9.81
             ay_g = ay_ms2 / 9.81
 
             # Calculate Tire Data (Axle-level approximation)
             f_df = self.sim.state['f_downforce']
-            delta_fz = (self.sim.mass * ax_ms2 * self.sim.p['h_cg']) / self.sim.p['wheelbase']
+            delta_fz = (self.sim.mass * self.sim.state['a'] * self.sim.p['h_cg']) / self.sim.p['wheelbase']
             
             fz_r = (self.sim.mass * 9.81 * self.sim.p['weight_dist_rear']) + (f_df * self.sim.p['aero_dist_rear']) + delta_fz
             fz_f = (self.sim.mass * 9.81 * (1 - self.sim.p['weight_dist_rear'])) + (f_df * (1 - self.sim.p['aero_dist_rear'])) - delta_fz
@@ -301,8 +282,8 @@ class LiveVisualizer:
             self.clock.tick(60)
 
             # Exit condition
-            if self.sim.battery_temp > 60.0 or motor_outputs['soe_pct'] <= 0.0:
-                print("Simulation stopped due to thermal/energy limits.")
+            if not self.sim.running:
+                print("Simulation stopped due to simulation limits.")
                 pygame.time.wait(2000)
                 running = False
 

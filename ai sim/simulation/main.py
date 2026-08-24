@@ -143,139 +143,157 @@ class SimulationEngine:
         self._redline_warned = False
         self.grip_limited_time = self.power_limited_time = self.braking_time = self.other_time = self.total_heat_j = self.total_aero_j = self.total_rr_j = self.total_accel_j = self.total_regen_j = 0.0
         self.laps_completed, self.lap_times, self.lap_segment_indices, self.lap_start_time, self.sector_times, self.final_time = 0, [], [], 0.0, [0.0]*4, 0.0
+        self.t = 0.0
+        self.t_idx = 0
+        self.running = True
+        self.prev_wp_idx = 0
+        self.wps_per_sector = max(1, len(self.waypoints) // 4)
+        self.start_x = self.state['x']
+        self.last_demands = {}
+        self.last_motor_outputs = {}
+
+    def step(self, throttle_pct=None, steering_angle=None, verbose=True):
+        """Advances the simulation by one time step."""
+        if not self.running: return
+
+        t, t_idx = self.t, self.t_idx
+
+        # Check for 75m finish line in Acceleration mode
+        if self.mode == 'Acceleration' and (self.state['x'] - self.start_x) >= 75.0:
+            if verbose: print(f"75m Acceleration Finish! Time: {t:.3f}s")
+            self.final_time = t
+            self.lap_times.append(t)
+            self.lap_segment_indices.append((0, t_idx))
+            self.laps_completed = 1
+            self.running = False
+            return
+
+        if throttle_pct is None or steering_angle is None:
+            throttle_pct, steering_angle = self.driver.get_commands(self.state, self.dt)
+
+        # Calculate instantaneous acceleration and aero downforce for the controller
+        v_prev = self.history['v'][-1] if self.history['v'] else 0.0
+        self.state['a'] = (self.state['v'] - v_prev) / self.dt if t > 0 else 0.0
+        
+        # Updated Aero Model: Quadratic Downforce
+        v_curr = self.state['v']
+        self.state['f_downforce'] = (self.p['downforce_coeff'] * v_curr**2)
+        f_drag_lookup = np.interp(v_curr, self.aero_v_ms, self.aero_drag_n, left=0.0)
+
+        demands = self.controller.calculate_demands(throttle_pct, steering_angle, self.state, self.wheel_speeds, self.dt)
+        motor_outputs = self.powertrain.step(demands['motor_torques'], self.wheel_speeds, self.dt, self.battery_temp)
+        
+        self.last_demands = demands
+        self.last_motor_outputs = motor_outputs
+
+        heat_removed = self.thermal.calculate_heat_removed(self.battery_temp, v_curr)
+        self.battery_temp += self.thermal.get_temperature_delta(motor_outputs.get('battery_heat_w', 0.0), heat_removed, self.dt)
+        self.total_heat_j += motor_outputs['total_heat_w'] * self.dt
+
+        is_redline = motor_outputs.get('motor_redline', False)
+        if is_redline and verbose and not self._redline_warned:
+            print(f"--- WARNING: MOTOR REDLINE REACHED at t={t:.3f}s ---")
+            self._redline_warned = True
+
+        v_prev = self.state['v']
+        
+        # Pass external drag to VD to ensure consistency with lookup table
+        physics_in = {
+            'rear_axle_torque': motor_outputs.get('rear_axle_torque', 0),
+            'fl_wheel_torque': motor_outputs.get('fl_wheel_torque', 0),
+            'fr_wheel_torque': motor_outputs.get('fr_wheel_torque', 0),
+            'mechanical_brake_pct': demands['mechanical_brake_pct'],
+            'external_drag': f_drag_lookup
+        }
+        new_state, self.wheel_speeds = self.vd.step(physics_in, steering_angle, self.dt)
+        self.state.update(new_state)
+
+        v_curr = self.state['v']
+        self.total_aero_j += f_drag_lookup * v_curr * self.dt
+        self.total_rr_j += np.interp(v_curr, self.rr_v_ms, self.rr_coeff) * self.mass * self.g * v_curr * self.dt
+        if v_curr > v_prev: self.total_accel_j += self.mass * ((v_curr - v_prev) / self.dt) * v_curr * self.dt
+        if motor_outputs['p_net_w'] < 0: self.total_regen_j += abs(motor_outputs['p_net_w']) * self.dt
+
+        # Reference calculations based on CSV log parameters
+        v_terminal = motor_outputs.get('voltage', 350.0)
+        current_a = motor_outputs['p_net_w'] / v_terminal if v_terminal > 10 else 0.0
+        # Simple motor RPM calc: Wheel rad/s -> RPM * gear ratio (Assuming 8-inch radius wheel)
+        motor_rpm = (v_curr / (2 * np.pi * 0.2032)) * 60 * self.p['gear_ratio'] if v_curr > 0.1 else 0.0
+        
+        curr_wp = self.waypoints[self.driver.current_waypoint_idx]
+
+        values = [
+            t, v_curr, curr_wp[2], np.sqrt((self.state['x'] - curr_wp[0])**2 + (self.state['y'] - curr_wp[1])**2),
+            motor_outputs['soc_pct'], self.battery_temp, motor_outputs['p_net_w'], throttle_pct, demands['mechanical_brake_pct'],
+            self.state['x'], self.state['y'], v_terminal, current_a, motor_rpm, motor_outputs.get('soe_pct', 0.0),
+            motor_outputs.get('fl_wheel_torque', 0.0) + motor_outputs.get('fr_wheel_torque', 0.0),
+            motor_outputs.get('rear_axle_torque', 0.0), motor_outputs.get('fl_wheel_torque', 0.0), motor_outputs.get('fr_wheel_torque', 0.0),
+            1.0 if is_redline else 0.0, demands['f_grip_f'], demands['f_grip_r'], demands['f_regen_f'], demands['f_regen_r']
+        ]
+        for k, v in zip(self.history.keys(), values):
+            self.history[k].append(v)
+
+        # Safety Stops: Battery Temperature (> 60C) and Energy Depletion (SOE <= 0)
+        if self.battery_temp > 60.0 or motor_outputs.get('soe_pct', 0.0) <= 0.0:
+            self.final_time = t
+            if verbose:
+                reason = "Overheat" if self.battery_temp > 60.0 else "Depletion"
+                val = f"{self.battery_temp:.1f}°C" if reason == "Overheat" else "0%"
+                print(f"--- CRITICAL: SIMULATION STOPPED - Battery {reason} ({val}) at t={t:.3f}s ---")
+            
+            if not self.lap_times:
+                self.lap_times.append(t)
+                self.lap_segment_indices.append((0, t_idx))
+            self.running = False
+            return
+
+        self.sector_times[min(self.driver.current_waypoint_idx // self.wps_per_sector, 3)] += self.dt
+        
+        # Determine limiting state (Longitudinal + Lateral)
+        a_lat = abs(v_curr**2 * np.tan(steering_angle) / self.p['wheelbase'])
+        a_lat_limit = self.p['max_lat_accel_g'] * self.g
+
+        if a_lat > 0.95 * a_lat_limit:
+            self.grip_limited_time += self.dt
+        elif throttle_pct > 0.95:
+            if (self.p['max_power_kw'] * 1000.0) / (self.mass * max(v_curr, 1.0)) < self.p['max_grip_accel_g'] * self.g:
+                self.power_limited_time += self.dt
+            else: self.grip_limited_time += self.dt
+        elif throttle_pct < -0.05: self.braking_time += self.dt
+        else: self.other_time += self.dt
+
+        if self.driver.current_waypoint_idx < self.prev_wp_idx - len(self.waypoints) // 2:
+            self.laps_completed += 1
+            self.lap_times.append(t - self.lap_start_time)
+            self.lap_segment_indices.append((0 if self.laps_completed == 1 else self.lap_segment_indices[-1][1] + 1, t_idx))
+            self.lap_start_time = t
+            if verbose: print(f"Lap {self.laps_completed}/{self.p['laps_to_run']} completed in {self.lap_times[-1]:.3f}s")
+        
+        self.prev_wp_idx = self.driver.current_waypoint_idx
+        if self.laps_completed >= self.p['laps_to_run']:
+            self.final_time = t
+            if len(self.lap_segment_indices) < self.laps_completed: self.lap_segment_indices.append((self.lap_segment_indices[-1][1] + 1 if self.laps_completed > 1 else 0, t_idx))
+            self.running = False
+
+        self.t += self.dt
+        self.t_idx += 1
 
     def run(self, verbose=True, input_log=None):
-        """
-        Runs the simulation. 
-        :param input_log: Dictionary or DataFrame containing logged 'throttle', 'brake', and 'steering'
-        """
+        """Runs the simulation."""
         if not self.waypoints: return
         if verbose: print(f"Starting Simulation: {self.controller.motor_config} configuration | {self.mode} mode | Regen: {self.p['regen_enabled']}")
         if verbose: print(self.p)
         if input_log is not None and verbose:
             print("--- RUNNING IN LOG REPLAY VALIDATION MODE ---")
             
-        wps_per_sector, prev_wp_idx = max(1, len(self.waypoints) // 4), 0
-
-        start_x = self.state['x']
-
-        for t_idx, t in enumerate(np.arange(0, self.total_time, self.dt)):
-            # Check for 75m finish line in Acceleration mode
-            if self.mode == 'Acceleration' and (self.state['x'] - start_x) >= 75.0:
-                if verbose: print(f"75m Acceleration Finish! Time: {t:.3f}s")
-                self.final_time = t
-                self.lap_times.append(t)
-                self.lap_segment_indices.append((0, t_idx))
-                self.laps_completed = 1
-                break
-
-            if input_log is not None:
-                # Replay inputs from the physical log
-                throttle_pct = input_log['throttle'][t_idx] if t_idx < len(input_log['throttle']) else 0.0
-                steering_angle = input_log['steering'][t_idx] if t_idx < len(input_log['steering']) else 0.0
-                
-            else:
-                # The driver handles both throttle AND steering logic (Stanley Controller)
-                throttle_pct, steering_angle = self.driver.get_commands(self.state, self.dt)
-
-            # Calculate instantaneous acceleration and aero downforce for the controller
-            v_prev = self.history['v'][-1] if self.history['v'] else 0.0
-            self.state['a'] = (self.state['v'] - v_prev) / self.dt if t > 0 else 0.0
+        while self.running and self.t < self.total_time:
+            throttle = None
+            steering = None
+            if input_log:
+                throttle = input_log['throttle'][self.t_idx] if self.t_idx < len(input_log['throttle']) else 0.0
+                steering = input_log['steering'][self.t_idx] if self.t_idx < len(input_log['steering']) else 0.0
             
-            # Updated Aero Model: Quadratic Downforce
-            v_curr = self.state['v']
-            self.state['f_downforce'] = (self.p['downforce_coeff'] * v_curr**2)
-            f_drag_lookup = np.interp(v_curr, self.aero_v_ms, self.aero_drag_n, left=0.0)
-
-            demands = self.controller.calculate_demands(throttle_pct, steering_angle, self.state, self.wheel_speeds, self.dt)
-            motor_outputs = self.powertrain.step(demands['motor_torques'], self.wheel_speeds, self.dt, self.battery_temp)
-            heat_removed = self.thermal.calculate_heat_removed(self.battery_temp, v_curr)
-            self.battery_temp += self.thermal.get_temperature_delta(motor_outputs.get('battery_heat_w', 0.0), heat_removed, self.dt)
-            self.total_heat_j += motor_outputs['total_heat_w'] * self.dt
-
-            is_redline = motor_outputs.get('motor_redline', False)
-            if is_redline and verbose and not self._redline_warned:
-                print(f"--- WARNING: MOTOR REDLINE REACHED at t={t:.3f}s ---")
-                self._redline_warned = True
-
-            v_prev = self.state['v']
-            
-            # Pass external drag to VD to ensure consistency with lookup table
-            physics_in = {
-                'rear_axle_torque': motor_outputs.get('rear_axle_torque', 0),
-                'fl_wheel_torque': motor_outputs.get('fl_wheel_torque', 0),
-                'fr_wheel_torque': motor_outputs.get('fr_wheel_torque', 0),
-                'mechanical_brake_pct': demands['mechanical_brake_pct'],
-                'external_drag': f_drag_lookup
-            }
-            new_state, self.wheel_speeds = self.vd.step(physics_in, steering_angle, self.dt)
-            self.state.update(new_state)
-
-            v_curr = self.state['v']
-            self.total_aero_j += f_drag_lookup * v_curr * self.dt
-            self.total_rr_j += np.interp(v_curr, self.rr_v_ms, self.rr_coeff) * self.mass * self.g * v_curr * self.dt
-            if v_curr > v_prev: self.total_accel_j += self.mass * ((v_curr - v_prev) / self.dt) * v_curr * self.dt
-            if motor_outputs['p_net_w'] < 0: self.total_regen_j += abs(motor_outputs['p_net_w']) * self.dt
-
-            # Reference calculations based on CSV log parameters
-            v_terminal = motor_outputs.get('voltage', 350.0)
-            current_a = motor_outputs['p_net_w'] / v_terminal if v_terminal > 10 else 0.0
-            # Simple motor RPM calc: Wheel rad/s -> RPM * gear ratio (Assuming 8-inch radius wheel)
-            motor_rpm = (v_curr / (2 * np.pi * 0.2032)) * 60 * self.p['gear_ratio'] if v_curr > 0.1 else 0.0
-            
-            curr_wp = self.waypoints[self.driver.current_waypoint_idx]
-
-            values = [
-                t, v_curr, curr_wp[2], np.sqrt((self.state['x'] - curr_wp[0])**2 + (self.state['y'] - curr_wp[1])**2),
-                motor_outputs['soc_pct'], self.battery_temp, motor_outputs['p_net_w'], throttle_pct, demands['mechanical_brake_pct'],
-                self.state['x'], self.state['y'], v_terminal, current_a, motor_rpm, motor_outputs.get('soe_pct', 0.0),
-                motor_outputs.get('fl_wheel_torque', 0.0) + motor_outputs.get('fr_wheel_torque', 0.0),
-                motor_outputs.get('rear_axle_torque', 0.0), motor_outputs.get('fl_wheel_torque', 0.0), motor_outputs.get('fr_wheel_torque', 0.0),
-                1.0 if is_redline else 0.0, demands['f_grip_f'], demands['f_grip_r'], demands['f_regen_f'], demands['f_regen_r']
-            ]
-            for k, v in zip(self.history.keys(), values):
-                self.history[k].append(v)
-
-            # Safety Stops: Battery Temperature (> 60C) and Energy Depletion (SOE <= 0)
-            if self.battery_temp > 60.0 or motor_outputs.get('soe_pct', 0.0) <= 0.0:
-                self.final_time = t
-                if verbose:
-                    reason = "Overheat" if self.battery_temp > 60.0 else "Depletion"
-                    val = f"{self.battery_temp:.1f}°C" if reason == "Overheat" else "0%"
-                    print(f"--- CRITICAL: SIMULATION STOPPED - Battery {reason} ({val}) at t={t:.3f}s ---")
-                
-                # Ensure results/plotting logic works if car fails before lap 1
-                if not self.lap_times:
-                    self.lap_times.append(t)
-                    self.lap_segment_indices.append((0, t_idx))
-                break
-
-            self.sector_times[min(self.driver.current_waypoint_idx // wps_per_sector, 3)] += self.dt
-            
-            # Determine limiting state (Longitudinal + Lateral)
-            a_lat = abs(v_curr**2 * np.tan(steering_angle) / self.p['wheelbase'])
-            a_lat_limit = self.p['max_lat_accel_g'] * self.g
-
-            if a_lat > 0.95 * a_lat_limit:
-                self.grip_limited_time += self.dt
-            elif throttle_pct > 0.95:
-                if (self.p['max_power_kw'] * 1000.0) / (self.mass * max(v_curr, 1.0)) < self.p['max_grip_accel_g'] * self.g:
-                    self.power_limited_time += self.dt
-                else: self.grip_limited_time += self.dt
-            elif throttle_pct < -0.05: self.braking_time += self.dt
-            else: self.other_time += self.dt
-
-            if self.driver.current_waypoint_idx < prev_wp_idx - len(self.waypoints) // 2:
-                self.laps_completed += 1
-                self.lap_times.append(t - self.lap_start_time)
-                self.lap_segment_indices.append((0 if self.laps_completed == 1 else self.lap_segment_indices[-1][1] + 1, t_idx))
-                self.lap_start_time = t
-                if verbose: print(f"Lap {self.laps_completed}/{self.p['laps_to_run']} completed in {self.lap_times[-1]:.3f}s")
-            prev_wp_idx = self.driver.current_waypoint_idx
-            if self.laps_completed >= self.p['laps_to_run']:
-                self.final_time = t
-                if len(self.lap_segment_indices) < self.laps_completed: self.lap_segment_indices.append((self.lap_segment_indices[-1][1] + 1 if self.laps_completed > 1 else 0, t_idx))
-                break
+            self.step(throttle, steering, verbose=verbose)
 
     def validate_thermal_from_log(self, csv_path, show_plot=True):
         """
