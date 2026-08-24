@@ -134,7 +134,13 @@ class SimulationEngine:
         if not self.waypoints: return
         initial_yaw = np.arctan2(self.waypoints[1][1] - self.waypoints[0][1], self.waypoints[1][0] - self.waypoints[0][0])
         self.state = {'x': self.waypoints[0][0], 'y': self.waypoints[0][1], 'yaw': initial_yaw, 'v': 0.0, 'yaw_rate': 0.0, 'a': 0.0, 'f_downforce': 0.0}
-        self.vd.x, self.vd.y, self.wheel_speeds, self.battery_temp = self.state['x'], self.state['y'], {'rear': 0.0, 'front_left': 0.0, 'front_right': 0.0}, self.p['initial_battery_temp']
+        self.vd.x = self.state['x']
+        self.vd.y = self.state['y']
+        self.vd.yaw = initial_yaw
+        self.vd.yaw_rate = 0.0
+        self.wheel_speeds = {'rear': 0.0, 'front_left': 0.0, 'front_right': 0.0}
+        self.battery_temp = self.p['initial_battery_temp']
+        if hasattr(self, 'driver'): self.driver.reset()
         self.history = {k: [] for k in [
             'time', 'v', 'v_target', 'cte', 'soc', 'temp', 'p_draw', 'throttle', 'brake_pct', 
             'x', 'y', 'voltage', 'current', 'motor_rpm', 'soe',

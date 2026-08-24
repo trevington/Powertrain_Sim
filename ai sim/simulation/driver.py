@@ -61,6 +61,14 @@ class PathCommander:
         
         return throttle_pct, steering_angle
 
+    def reset(self):
+        """Resets driver internal state variables for a clean simulation start."""
+        self.current_waypoint_idx = 0
+        self.v_error_int = 0
+        self.prev_v_error = 0
+        self.prev_throttle = 0.0
+        self.prev_steering = 0.0
+
     def _update_waypoint(self, state):
         """Finds the nearest/next waypoint to target."""
         if not self.waypoints:

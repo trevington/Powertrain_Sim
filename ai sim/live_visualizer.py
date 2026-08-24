@@ -26,7 +26,7 @@ class LiveVisualizer:
         self.gg_history = deque(maxlen=40)
 
         # Manual control state
-        self.manual_mode = True
+        self.manual_mode = False
         self.manual_throttle = 0.0
         self.manual_steering = 0.0
 
