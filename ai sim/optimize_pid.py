@@ -11,9 +11,12 @@ def objective(trial):
     # Suggest parameters for the driver's steering PID and path following lookahead
     params = {
         'k_stanley': trial.suggest_float('k_stanley', 8, 15.0, log=True),
-        'kp_v': trial.suggest_float('kp_v', 0.5, 3.0, log=True),
-        'ki_v': trial.suggest_float('ki_v', 0.0001, 0.02, log=True),
-        'kd_v': trial.suggest_float('kd_v', 0.01, 2.0, log=True),        
+        'kp_accel': trial.suggest_float('kp_accel', 0.5, 3.0, log=True),
+        'ki_accel': trial.suggest_float('ki_accel', 0.0001, 0.02, log=True),
+        'kd_accel': trial.suggest_float('kd_accel', 0.01, 2.0, log=True),
+        'kp_brake': trial.suggest_float('kp_brake', 0.5, 3.0, log=True),
+        'ki_brake': trial.suggest_float('ki_brake', 0.0001, 0.02, log=True),
+        'kd_brake': trial.suggest_float('kd_brake', 0.01, 2.0, log=True),
         'look_ahead_indices': 1,
         'look_ahead_v_scale': trial.suggest_float('look_ahead_v_scale', 0.005, 0.1),
         'laps_to_run': 2, # Run fewer laps to speed up the optimization process
@@ -38,6 +41,7 @@ def objective(trial):
     mean_cte = results['mean_cte']
     max_cte = results['max_cte']
     energy_used = results['energy_used_wh']
+    mean_jerk = results.get('mean_abs_jerk', 0.0)
     
     
     # Weighted Score:
@@ -47,7 +51,11 @@ def objective(trial):
     if max_cte > 2.25: # NOTE: minimum 2.25m track edge in michigan
         stability_penalty = (max_cte ** 2) * 50.0
         
-    score = lap_time + (mean_cte * 5.0) + stability_penalty + (energy_used * 0.15) 
+    # Jerk penalty: Excessively high jerk indicates PID chatter or unstable longitudinal control.
+    # This weight balances the penalty against lap time and stability.
+    jerk_penalty = mean_jerk * 0.05
+
+    score = lap_time + (mean_cte * 5.0) + stability_penalty + (energy_used * 0.15) + jerk_penalty
     
     return score
 

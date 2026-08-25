@@ -18,13 +18,27 @@ class PathCommander:
         self.look_ahead_indices = self.params.get('look_ahead_indices', 1)
         self.look_ahead_v_scale = self.params.get('look_ahead_v_scale', 0.25)
         
-        # PID Gains for Longitudinal Control (Throttle/Brake)
-        self.kp_v = self.params.get('kp_v', 0.187480)
-        self.ki_v = self.params.get('ki_v', 0.022519)
-        self.kd_v = self.params.get('kd_v', 0.014126)
-        self.v_error_int = 0
+        # Longitudinal Control Gains (Shared Defaults)
+        kp_default = self.params.get('kp_v', 0.187480)
+        ki_default = self.params.get('ki_v', 0.022519)
+        kd_default = self.params.get('kd_v', 0.014126)
+
+        # Acceleration PID Gains
+        self.kp_accel = self.params.get('kp_accel', kp_default)
+        self.ki_accel = self.params.get('ki_accel', ki_default)
+        self.kd_accel = self.params.get('kd_accel', kd_default)
+
+        # Brake PID Gains
+        self.kp_brake = self.params.get('kp_brake', kp_default)
+        self.ki_brake = self.params.get('ki_brake', ki_default)
+        self.kd_brake = self.params.get('kd_brake', kd_default)
+
+        self.v_int_accel = 0.0
+        self.prev_err_accel = 0.0
+        self.v_int_brake = 0.0
+        self.prev_err_brake = 0.0
+
         self.v_int_limit = self.params.get('v_int_limit', 0.5)
-        self.prev_v_error = 0
         
         self.v_deadband = self.params.get('v_deadband', 0.15)
         self.steer_deadband = self.params.get('steer_deadband', np.radians(0.1))
@@ -64,8 +78,10 @@ class PathCommander:
     def reset(self):
         """Resets driver internal state variables for a clean simulation start."""
         self.current_waypoint_idx = 0
-        self.v_error_int = 0
-        self.prev_v_error = 0
+        self.v_int_accel = 0.0
+        self.prev_err_accel = 0.0
+        self.v_int_brake = 0.0
+        self.prev_err_brake = 0.0
         self.prev_throttle = 0.0
         self.prev_steering = 0.0
 
@@ -94,21 +110,36 @@ class PathCommander:
         self.current_waypoint_idx = closest_idx
 
     def _calculate_longitudinal(self, current_v, target_v, dt):
-        """Simple PID for throttle/brake demand."""
+        """Separate PIDs for acceleration and braking."""
         error = target_v - current_v
 
         # 1. Apply Deadband: Ignore small errors to stop the PID from "shivering"
         if abs(error) < self.v_deadband:
             error = 0.0
 
-        self.v_error_int += error * dt
-        
-        # Anti-windup: Clamp the integrator to prevent throttle-pegging after a slide
-        self.v_error_int = np.clip(self.v_error_int, -self.v_int_limit, self.v_int_limit)
-        
-        deriv = (error - self.prev_v_error) / dt if dt > 0 else 0
-        
-        output = (self.kp_v * error) + (self.ki_v * self.v_error_int) + (self.kd_v * deriv)
+        if error >= 0:
+            # Acceleration Controller
+            self.v_int_accel += error * dt
+            self.v_int_accel = np.clip(self.v_int_accel, -self.v_int_limit, self.v_int_limit)
+            deriv = (error - self.prev_err_accel) / dt if dt > 0 else 0
+            output = (self.kp_accel * error) + (self.ki_accel * self.v_int_accel) + (self.kd_accel * deriv)
+            
+            self.prev_err_accel = error
+            # Reset Braking integrator to prevent integrator windup on transition
+            self.v_int_brake = 0.0
+            self.prev_err_brake = 0.0
+        else:
+            # Braking Controller
+            self.v_int_brake += error * dt
+            self.v_int_brake = np.clip(self.v_int_brake, -self.v_int_limit, self.v_int_limit)
+            deriv = (error - self.prev_err_brake) / dt if dt > 0 else 0
+            output = (self.kp_brake * error) + (self.ki_brake * self.v_int_brake) + (self.kd_brake * deriv)
+            
+            self.prev_err_brake = error
+            # Reset Acceleration integrator to prevent integrator windup on transition
+            self.v_int_accel = 0.0
+            self.prev_err_accel = 0.0
+
         self.prev_v_error = error
         
         # Clip to -1.0 (full brake) to 1.0 (full throttle)

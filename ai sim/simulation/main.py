@@ -23,10 +23,13 @@ class SimulationEngine:
         self.track_file = 'tracks/endurance.csv'
         self.p = {
             'num_cells': 132, 'max_power_kw': 80.0, 'gear_ratio': 4.6, 
-            'max_lat_accel_g': 2.0753, 'max_brake_accel_g': 1.49, 'max_grip_accel_g': 0.9656, # NOTE: taken from  CR30 tractive battery spreadsheet
+            'max_lat_accel_g': 1.8, 'max_brake_accel_g': 1.49, 'max_grip_accel_g': 0.9656, # NOTE: taken from  CR30 tractive battery spreadsheet
             'max_v': 35.0, 'ambient_temp': 25.0, 'initial_battery_temp': 38.0, # NOTE: taken from CR30 tractive battery spreadsheet
             'laps_to_run': 22, 'motor_config': 'RWD',
-            'k_stanley': 9.662335, 'kp_v': 0.998771, 'ki_v': 0.001076, 'kd_v': 1.185468, 'look_ahead_indices': 1, 'look_ahead_v_scale': 0.035914,# NOTE: optimized values (optimize_driver.py)
+            'k_stanley': 9.662335, 
+            'kp_accel': 0.998771, 'ki_accel': 0.001076, 'kd_accel': 1.185468,
+            'kp_brake': 0.998771, 'ki_brake': 0.001076, 'kd_brake': 1.185468,
+            'look_ahead_indices': 1, 'look_ahead_v_scale': 0.035914,# NOTE: optimized values (optimize_driver.py)
             'wheelbase': 1.535, 'mode': 'Endurance', 'h_cg': 0.3302, # NOTE: from erick accel sim
             'weight_dist_rear': 0.53, 'aero_dist_rear': 0.55, # NOTE: from erick accel sim
             'downforce_coeff': 2.45, # NOTE: from erick accel sim
@@ -142,7 +145,7 @@ class SimulationEngine:
         self.battery_temp = self.p['initial_battery_temp']
         if hasattr(self, 'driver'): self.driver.reset()
         self.history = {k: [] for k in [
-            'time', 'v', 'v_target', 'cte', 'soc', 'temp', 'p_draw', 'throttle', 'brake_pct', 
+            'time', 'v', 'v_target', 'a', 'cte', 'soc', 'temp', 'p_draw', 'throttle', 'brake_pct', 
             'x', 'y', 'voltage', 'current', 'motor_rpm', 'soe',
             't_front', 't_rear', 't_fl', 't_fr', 'redline', 'f_grip_f', 'f_grip_r', 'f_regen_f', 'f_regen_r'
         ]}
@@ -177,10 +180,6 @@ class SimulationEngine:
         if throttle_pct is None or steering_angle is None:
             throttle_pct, steering_angle = self.driver.get_commands(self.state, self.dt)
 
-        # Calculate instantaneous acceleration and aero downforce for the controller
-        v_prev = self.history['v'][-1] if self.history['v'] else 0.0
-        self.state['a'] = (self.state['v'] - v_prev) / self.dt if t > 0 else 0.0
-        
         # Updated Aero Model: Quadratic Downforce
         v_curr = self.state['v']
         self.state['f_downforce'] = (self.p['downforce_coeff'] * v_curr**2)
@@ -212,6 +211,9 @@ class SimulationEngine:
             'external_drag': f_drag_lookup
         }
         new_state, self.wheel_speeds = self.vd.step(physics_in, steering_angle, self.dt)
+        
+        # Update acceleration based on the velocity change achieved in this step
+        self.state['a'] = (new_state['v'] - self.state['v']) / self.dt if self.dt > 0 else 0.0
         self.state.update(new_state)
 
         v_curr = self.state['v']
@@ -229,7 +231,7 @@ class SimulationEngine:
         curr_wp = self.waypoints[self.driver.current_waypoint_idx]
 
         values = [
-            t, v_curr, curr_wp[2], np.sqrt((self.state['x'] - curr_wp[0])**2 + (self.state['y'] - curr_wp[1])**2),
+            t, v_curr, curr_wp[2], self.state['a'], np.sqrt((self.state['x'] - curr_wp[0])**2 + (self.state['y'] - curr_wp[1])**2),
             motor_outputs['soc_pct'], self.battery_temp, motor_outputs['p_net_w'], throttle_pct, demands['mechanical_brake_pct'],
             self.state['x'], self.state['y'], v_terminal, current_a, motor_rpm, motor_outputs.get('soe_pct', 0.0),
             motor_outputs.get('fl_wheel_torque', 0.0) + motor_outputs.get('fr_wheel_torque', 0.0),
@@ -452,6 +454,16 @@ class SimulationEngine:
         energy_used_wh = self.powertrain.battery.capacity_wh * (1.0 - (self.history['soe'][-1] / 100.0))
         scores = scorer.calculate_endurance_score(self.final_time, energy_used_wh, self.laps_completed)
 
+        # Calculate Mean Absolute Jerk (rate of change of acceleration)
+        accel_hist = np.array(self.history['a'])
+        time_hist = np.array(self.history['time'])
+        if len(accel_hist) > 1:
+            dt = np.diff(time_hist)
+            mask = dt > 0
+            mean_abs_jerk = np.mean(np.abs(np.diff(accel_hist)[mask] / dt[mask])) if np.any(mask) else 0.0
+        else:
+            mean_abs_jerk = 0.0
+
         if verbose:
             header = "ACCELERATION SUMMARY" if self.mode == 'Acceleration' else "LAP TIME SUMMARY"
             time_label = "75m Run Time:     " if self.mode == 'Acceleration' else "Best Lap Time:    "
@@ -490,7 +502,8 @@ class SimulationEngine:
             'endurance_score': scores,
             'energy_used_wh': energy_used_wh,
             'final_temp': self.battery_temp,
-            'final_soe': self.history['soe'][-1] if self.history['soe'] else 0.0
+            'final_soe': self.history['soe'][-1] if self.history['soe'] else 0.0,
+            'mean_abs_jerk': mean_abs_jerk
         }
 
 def run_simulation(params=None, verbose=True, plot=True):
@@ -680,7 +693,7 @@ if __name__ == "__main__":
     #logs_dir = '/home/tadayal100/Powertrain_Sim/ai sim/logs/'
     #sim.run_thermal_batch_study(logs_dir)
 
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 11, 'motor_config': 'RWD', 'regen_enabled': True, 'max_regen_power_kw': 80.0, 'max_power_kw': 80.0, 'gear_ratio': 3.0})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 11, 'motor_config': 'RWD', 'regen_enabled': True, 'max_regen_power_kw': 2.0, 'max_power_kw': 35.0})
 
 
     # NOTE: change log file directory
