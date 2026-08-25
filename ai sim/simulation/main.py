@@ -24,13 +24,13 @@ class SimulationEngine:
         self.p = {
             'num_cells': 132, 'max_power_kw': 80.0, 'gear_ratio': 4.6, 
             'max_lat_accel_g': 2.0753, 'max_brake_accel_g': 1.49, 'max_grip_accel_g': 0.9656, # NOTE: taken from  CR30 tractive battery spreadsheet
-            'max_v': 28.41, 'ambient_temp': 25.0, 'initial_battery_temp': 38.0, # NOTE: taken from CR30 tractive battery spreadsheet
+            'max_v': 35.0, 'ambient_temp': 25.0, 'initial_battery_temp': 38.0, # NOTE: taken from CR30 tractive battery spreadsheet
             'laps_to_run': 22, 'motor_config': 'RWD',
             'k_stanley': 9.662335, 'kp_v': 0.998771, 'ki_v': 0.001076, 'kd_v': 1.185468, 'look_ahead_indices': 1, 'look_ahead_v_scale': 0.035914,# NOTE: optimized values (optimize_driver.py)
             'wheelbase': 1.535, 'mode': 'Endurance', 'h_cg': 0.3302, # NOTE: from erick accel sim
             'weight_dist_rear': 0.53, 'aero_dist_rear': 0.55, # NOTE: from erick accel sim
             'downforce_coeff': 2.45, # NOTE: from erick accel sim
-            'rear_motor_max_torque': 150.0, 'rear_motor_max_rpm': 7000.0, # Emrax 208
+            'rear_motor_max_torque': 150.0, 'rear_motor_max_rpm': 6000.0, # Emrax 208
             'front_motor_max_power_kw': 10.0, 'front_motor_max_torque': 4.7, 'front_motor_max_rpm': 20000.0, 'front_gear_ratio': 13.4, # MotorCAD, 480V 25A sim (NOTE: needs to be updated aaa)
             'rear_efficiency_csv': 'emrax208_efficiency.csv', # NOTE: from Emrax 208 datasheet, incorrect so applying 95% in motor.py
             'regen_enabled': True,
@@ -680,7 +680,7 @@ if __name__ == "__main__":
     #logs_dir = '/home/tadayal100/Powertrain_Sim/ai sim/logs/'
     #sim.run_thermal_batch_study(logs_dir)
 
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 11, 'motor_config': 'RWD', 'regen_enabled': True, 'num_cells': 132, 'max_regen_power_kw': 2.0, 'max_power_kw': 80.0,})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 11, 'motor_config': 'RWD', 'regen_enabled': True, 'max_regen_power_kw': 80.0, 'max_power_kw': 80.0, 'gear_ratio': 3.0})
 
 
     # NOTE: change log file directory

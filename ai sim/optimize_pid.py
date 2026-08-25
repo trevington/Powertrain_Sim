@@ -19,7 +19,7 @@ def objective(trial):
         'laps_to_run': 2, # Run fewer laps to speed up the optimization process
         'motor_config': 'RWD',
         'regen_enabled': True,
-        'max_power_kw': 35.0,
+        'max_power_kw': 80.0,
     }
     
     # Run simulation in headless mode
