@@ -19,9 +19,9 @@ class PathCommander:
         self.look_ahead_v_scale = self.params.get('look_ahead_v_scale', 0.25)
         
         # PID Gains for Longitudinal Control (Throttle/Brake)
-        self.kp_v = self.params.get('kp_v', 0.14851)
-        self.ki_v = self.params.get('ki_v', 1.584)
-        self.kd_v = self.params.get('kd_v', 0.5489)
+        self.kp_v = self.params.get('kp_v', 0.187480)
+        self.ki_v = self.params.get('ki_v', 0.022519)
+        self.kd_v = self.params.get('kd_v', 0.014126)
         self.v_error_int = 0
         self.v_int_limit = self.params.get('v_int_limit', 0.5)
         self.prev_v_error = 0

@@ -142,11 +142,11 @@ class MotorInverter:
                 self.efficiency_map = LinearNDInterpolator(data_clean[:, :2], data_clean[:, 2])
                 self._raw_data = data # Store for visualization
                 self._res_info = (res_rpm, res_trq)
-                print(f"[MotorInverter] {self.name}: Efficiency map loaded successfully.")
+                #print(f"[MotorInverter] {self.name}: Efficiency map loaded successfully.")
             except Exception as e:
                 print(f"Warning: Could not load efficiency map from {efficiency_csv}: {e}")
-        else:
-            print(f"[MotorInverter] {self.name}: No map provided. Using peak efficiency {self.peak_efficiency}.")
+        #else:
+            #print(f"[MotorInverter] {self.name}: No map provided. Using peak efficiency {self.peak_efficiency}.")
 
     def get_mechanical_output(self, torque_request_nm, omega_rad_s):
         """
@@ -169,7 +169,7 @@ class MotorInverter:
             rpm = abs(omega_rad_s) * 60 / (2 * np.pi)
             torque_abs = abs(torque_actual)
 
-            efficiency = float(self.efficiency_map(rpm, torque_abs))
+            efficiency = float(self.efficiency_map(rpm, torque_abs)) * 0.95
             # Fallback to peak if lookup is outside the convex hull of provided data
             if np.isnan(efficiency):
                 if not hasattr(self, '_warned_fallback'):

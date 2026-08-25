@@ -71,8 +71,8 @@ class LiveVisualizer:
         
         # Brake (Red)
         pygame.draw.rect(self.screen, (50, 50, 50), (bar_x + 120, bar_y, bar_w, bar_h))
-        if brake > 0:
-            pygame.draw.rect(self.screen, (255, 0, 0), (bar_x + 120, bar_y, int(brake * bar_w), bar_h))
+        if throttle < 0:
+            pygame.draw.rect(self.screen, (255, 0, 0), (bar_x + 120, bar_y, int(-throttle * bar_w), bar_h))
         
         self.screen.blit(self.font.render("Throttle", True, (200, 200, 200)), (bar_x, bar_y - 20))
         self.screen.blit(self.font.render("Brake", True, (200, 200, 200)), (bar_x + 120, bar_y - 20))
@@ -80,7 +80,7 @@ class LiveVisualizer:
         # Steering Visualizer
         steer_center = (1100, 100)
         pygame.draw.circle(self.screen, (100, 100, 100), steer_center, 50, 2)
-        angle_rad = -steering * 5 # Exaggerate for visual clarity
+        angle_rad = -steering # Exaggerate for visual clarity
         end_x = steer_center[0] + 50 * np.sin(angle_rad)
         end_y = steer_center[1] - 50 * np.cos(angle_rad)
         pygame.draw.line(self.screen, (0, 150, 255), steer_center, (end_x, end_y), 4)
@@ -144,11 +144,12 @@ class LiveVisualizer:
         self.screen.blit(self.font.render("Friction Ellipses & Load", True, (200, 200, 200)), (1030, 670))
 
         # Plot Trail
+        '''
         for i, (h_ax, h_ay) in enumerate(self.gg_history):
             alpha = int(255 * (i / len(self.gg_history)))
             h_x = gg_center[0] + (h_ay * g_scale)
             h_y = gg_center[1] - (h_ax * g_scale)
-            pygame.draw.circle(self.screen, (alpha, alpha, 0), (int(h_x), int(h_y)), 2)
+            pygame.draw.circle(self.screen, (alpha, alpha, 0), (int(h_x), int(h_y)), 2)'''
 
         # Plot the G-Dot
         dot_x = gg_center[0] + (ay_g * g_scale)
@@ -265,7 +266,7 @@ class LiveVisualizer:
 
             # Update HUD with G-units
             self.draw_hud(
-                throttle=max(0, throttle_pct),
+                throttle = throttle_pct,
                 brake=demands['mechanical_brake_pct'],
                 steering=steering_angle,
                 velocity=self.sim.state['v'],
@@ -293,6 +294,7 @@ if __name__ == "__main__":
     viz = LiveVisualizer({
         'motor_config': 'RWD',
         'regen_enabled': True,
-        'max_regen_power_kw': 20.0
+        'max_regen_power_kw': 20.0,
+        'max_power_kw': 80.0
     })
     viz.run()
