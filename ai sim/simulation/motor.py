@@ -267,6 +267,7 @@ class PowertrainSystem:
         wheel_tau_r = tau_r * self.rear_trans.ratio * self.rear_trans.efficiency
         outputs['rear_axle_torque'] = wheel_tau_r
         outputs['motor_redline'] = redline_r
+        outputs['motor_heat_gen_w'] = heat_r
 
         # Process Front Motors if AWD
         if self.front_left:
@@ -304,7 +305,8 @@ class PowertrainSystem:
             'total_heat_w': total_heat_gen,      # System-wide for energy breakdown
             'battery_heat_w': batt_heat,        # Battery-only for thermal model
             'soc_pct': soe_val,
-            'soe_pct': soe_val
+            'soe_pct': soe_val,
+            'motor_heat_gen_w': heat_r
         })
         
         return outputs

@@ -147,10 +147,10 @@ class SimulationEngine:
         self.history = {k: [] for k in [
             'time', 'v', 'v_target', 'a', 'cte', 'soc', 'temp', 'p_draw', 'throttle', 'brake_pct', 
             'x', 'y', 'voltage', 'current', 'motor_rpm', 'soe',
-            't_front', 't_rear', 't_fl', 't_fr', 'redline', 'f_grip_f', 'f_grip_r', 'f_regen_f', 'f_regen_r'
+            't_front', 't_rear', 't_fl', 't_fr', 'redline', 'f_grip_f', 'f_grip_r', 'f_regen_f', 'f_regen_r', 'heat_gen_w'
         ]}
         self._redline_warned = False
-        self.grip_limited_time = self.power_limited_time = self.braking_time = self.other_time = self.total_heat_j = self.total_aero_j = self.total_rr_j = self.total_accel_j = self.total_regen_j = 0.0
+        self.grip_limited_time = self.power_limited_time = self.braking_time = self.other_time = self.total_heat_j = self.total_aero_j = self.total_rr_j = self.total_accel_j = self.total_regen_j = self.motor_heat_j = 0.0
         self.laps_completed, self.lap_times, self.lap_segment_indices, self.lap_start_time, self.sector_times, self.final_time = 0, [], [], 0.0, [0.0]*4, 0.0
         self.t = 0.0
         self.t_idx = 0
@@ -195,6 +195,10 @@ class SimulationEngine:
         self.battery_temp += self.thermal.get_temperature_delta(motor_outputs.get('battery_heat_w', 0.0), heat_removed, self.dt)
         self.total_heat_j += motor_outputs['total_heat_w'] * self.dt
 
+
+        self.motor_heat_gen = self.last_motor_outputs.get('motor_heat_gen_w', 0.0)
+        self.motor_heat_j += self.motor_heat_gen * self.dt
+
         is_redline = motor_outputs.get('motor_redline', False)
         if is_redline and verbose and not self._redline_warned:
             print(f"--- WARNING: MOTOR REDLINE REACHED at t={t:.3f}s ---")
@@ -236,7 +240,7 @@ class SimulationEngine:
             self.state['x'], self.state['y'], v_terminal, current_a, motor_rpm, motor_outputs.get('soe_pct', 0.0),
             motor_outputs.get('fl_wheel_torque', 0.0) + motor_outputs.get('fr_wheel_torque', 0.0),
             motor_outputs.get('rear_axle_torque', 0.0), motor_outputs.get('fl_wheel_torque', 0.0), motor_outputs.get('fr_wheel_torque', 0.0),
-            1.0 if is_redline else 0.0, demands['f_grip_f'], demands['f_grip_r'], demands['f_regen_f'], demands['f_regen_r']
+            1.0 if is_redline else 0.0, demands['f_grip_f'], demands['f_grip_r'], demands['f_regen_f'], demands['f_regen_r'], self.motor_heat_gen, self.motor_heat_j
         ]
         for k, v in zip(self.history.keys(), values):
             self.history[k].append(v)
@@ -693,7 +697,8 @@ if __name__ == "__main__":
     #logs_dir = '/home/tadayal100/Powertrain_Sim/ai sim/logs/'
     #sim.run_thermal_batch_study(logs_dir)
 
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 11, 'motor_config': 'RWD', 'regen_enabled': True, 'max_regen_power_kw': 2.0, 'max_power_kw': 35.0})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': True, 'max_regen_power_kw': 2.0, 'max_power_kw': 45.0,
+                    'k_stanley': 8.612353, 'kp_accel': 0.0715, 'ki_accel': 0.000003, 'kd_accel': 1.222849, 'kp_brake': 0.030705, 'ki_brake': 0.000122, 'kd_brake': 0.307026, 'look_ahead_v_scale': 0.022351})
 
 
     # NOTE: change log file directory

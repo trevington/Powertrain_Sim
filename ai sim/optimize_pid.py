@@ -13,16 +13,16 @@ def objective(trial):
         'k_stanley': trial.suggest_float('k_stanley', 8, 15.0, log=True),
         'kp_accel': trial.suggest_float('kp_accel', 0.01, 0.5, log=True),
         'ki_accel': trial.suggest_float('ki_accel', 0.000001, 0.0002, log=True),
-        'kd_accel': trial.suggest_float('kd_accel', 0.5, 1.5, log=True),
-        'kp_brake': trial.suggest_float('kp_brake', 0.02, 0.95, log=True),
+        'kd_accel': trial.suggest_float('kd_accel', 0.8, 1.9, log=True),
+        'kp_brake': trial.suggest_float('kp_brake', 0.002, 0.5, log=True),
         'ki_brake': trial.suggest_float('ki_brake', 0.00005, 0.01, log=True),
         'kd_brake': trial.suggest_float('kd_brake', 0.005, 1.0, log=True),
         'look_ahead_indices': 1,
-        'look_ahead_v_scale': trial.suggest_float('look_ahead_v_scale', 0.001, 0.5),
+        'look_ahead_v_scale': trial.suggest_float('look_ahead_v_scale', 0.0005, 0.25),
         'laps_to_run': 2, # Run fewer laps to speed up the optimization process
         'motor_config': 'RWD',
         'regen_enabled': True,
-        'max_power_kw': 35.0,
+        'max_power_kw': 45.0,
     }
     
     # Run simulation in headless mode
@@ -48,12 +48,12 @@ def objective(trial):
     # If max deviation > 2m (typical track edge), we apply an exponential penalty.
     stability_penalty = 0
     if max_cte > 2.25: # NOTE: minimum 2.25m track edge in michigan
-        stability_penalty = (max_cte ** 2) * 50.0
+        stability_penalty = (max_cte ** 2) * 22.5
         
     # Jerk penalty: Excessively high jerk indicates PID chatter or unstable longitudinal control.
     # This weight balances the penalty against lap time and stability.
 
-    score = lap_time + (mean_cte * 5.0) + stability_penalty + (energy_used * 0.15)
+    score = 2 * lap_time + (mean_cte * 5.0) + stability_penalty + (energy_used * 0.15)
     
     return score
 
@@ -68,7 +68,7 @@ if __name__ == "__main__":
         load_if_exists=True)
 
     # n_jobs=-1 uses all available CPU cores
-    study.optimize(objective, n_trials=200, n_jobs=-1)
+    study.optimize(objective, n_trials=100, n_jobs=-1)
     
     print("\n" + "="*40)
     print("OPTIMIZATION RESULTS")
