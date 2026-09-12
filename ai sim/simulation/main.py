@@ -22,8 +22,8 @@ class SimulationEngine:
     def __init__(self, params=None):
         self.track_file = 'tracks/endurance.csv'
         self.p = {
-            'num_cells': 132, 'max_power_kw': 80.0, 'gear_ratio': 4.6, 
-            'max_lat_accel_g': 1.8, 'max_brake_accel_g': 1.49, 'max_grip_accel_g': 0.9656, # NOTE: taken from  CR30 tractive battery spreadsheet
+            'num_cells': 130, 'max_power_kw': 80.0, 'gear_ratio': 4.6, 
+            'max_lat_accel_g': 1.8 * 0.95, 'max_brake_accel_g': 1.49 * 0.95, 'max_grip_accel_g': 1.49 * 0.95, # NOTE: taken from  CR30 tractive battery spreadsheet (max accel grip of 0.9656 during endurance)
             'max_v': 35.0, 'ambient_temp': 25.0, 'initial_battery_temp': 38.0, # NOTE: taken from CR30 tractive battery spreadsheet
             'laps_to_run': 22, 'motor_config': 'RWD',
             'k_stanley': 9.662335, 
@@ -32,8 +32,8 @@ class SimulationEngine:
             'look_ahead_indices': 1, 'look_ahead_v_scale': 0.035914,# NOTE: optimized values (optimize_driver.py)
             'wheelbase': 1.535, 'mode': 'Endurance', 'h_cg': 0.3302, # NOTE: from erick accel sim
             'weight_dist_rear': 0.53, 'aero_dist_rear': 0.55, # NOTE: from erick accel sim
-            'downforce_coeff': 2.45, # NOTE: from erick accel sim
-            'rear_motor_max_torque': 150.0, 'rear_motor_max_rpm': 6000.0, # Emrax 208
+            'downforce_coeff': 4.058, # NOTE: from aero data (9/11/26)
+            'rear_motor_max_torque': 140.0, 'rear_motor_max_rpm': 6000.0, # Emrax 208
             'front_motor_max_power_kw': 10.0, 'front_motor_max_torque': 4.7, 'front_motor_max_rpm': 20000.0, 'front_gear_ratio': 13.4, # MotorCAD, 480V 25A sim (NOTE: needs to be updated aaa)
             'rear_efficiency_csv': 'emrax208_efficiency.csv', # NOTE: from Emrax 208 datasheet, incorrect so applying 95% in motor.py
             'regen_enabled': True,
@@ -477,12 +477,14 @@ class SimulationEngine:
             print(f"Total Session Time:  {self.final_time:.3f} s")
             print(f"Grip Limited:        {self.grip_limited_time:.2f} s")
             print(f"Power Limited:       {self.power_limited_time:.2f} s")
-            print(f"{time_label} {primary_time:.3f} s")
+            print(f"{time_label}         {primary_time:.3f} s")
             print(f"Max Battery Temp:    {max(self.history['temp']):.2f} °C")
+            #print(f"Average torque:      {np.mean(self.history['f_grip_f'] + self.history['f_grip_r']):.2f} N")
             print(f"Final SoE:           {self.history['soe'][-1]:.2f} %")
             print(f"Energy Recovered:    {self.total_regen_j / 3600.0:.2f} Wh")
             print(f"Energy Used:         {energy_used_wh:.2f} Wh")
-            print(f"Energy Remaining:     {self.powertrain.battery.capacity_wh - energy_used_wh:.2f} Wh")
+            print(f"Energy Remaining:    {self.powertrain.battery.capacity_wh - energy_used_wh:.2f} Wh")
+            print(f"Average Power:       {energy_used_wh / (self.final_time / 3600.0) / 1000.0:.2f} kW")
             '''if self.mode == 'Endurance':
                 print(f"Endurance Points:    {scores['endurance_points']}")
                 print(f"Efficiency Points:   {scores['efficiency_points']}")'''
@@ -697,9 +699,10 @@ if __name__ == "__main__":
     #logs_dir = '/home/tadayal100/Powertrain_Sim/ai sim/logs/'
     #sim.run_thermal_batch_study(logs_dir)
 
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': True, 'max_regen_power_kw': 2.0, 'max_power_kw': 45.0,
-                    'k_stanley': 8.612353, 'kp_accel': 0.0715, 'ki_accel': 0.000003, 'kd_accel': 1.222849, 'kp_brake': 0.030705, 'ki_brake': 0.000122, 'kd_brake': 0.307026, 'look_ahead_v_scale': 0.022351})
-
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': True, 'max_regen_power_kw': 2.0, 'max_power_kw': 80.0,
+                    'rear_motor_max_torque': 220.0, 'rear_motor_max_rpm': 4500.0, 'gear_ratio': 3.2})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': True, 'max_regen_power_kw': 2.0, 'max_power_kw': 80.0,
+                    'rear_motor_max_torque': 140.0, 'rear_motor_max_rpm': 6000.0, 'gear_ratio': 4.6})
 
     # NOTE: change log file directory
     '''log = '/home/tadayal100/Powertrain_Sim/ai sim/logs/5-30-test-weekend-logs/LOG_037.CSV'

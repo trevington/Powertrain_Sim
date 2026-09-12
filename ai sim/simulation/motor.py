@@ -111,13 +111,13 @@ class MotorInverter:
     Combined Motor and Inverter model.
     Handles the Emrax 208 or custom front hub motors.
     """
-    def __init__(self, name="Emrax 208", max_torque=150, peak_efficiency=0.86, max_rpm=7000, max_power_kw=56.0, efficiency_csv=None):
+    def __init__(self, name="Emrax 208", max_torque=140, peak_efficiency=0.86, max_rpm=4500, max_power_kw=86.0, efficiency_csv=None):
         self.name = name
         self.max_torque = max_torque
         self.peak_efficiency = peak_efficiency
         self.max_power_w = max_power_kw * 1000.0
         self.max_omega = max_rpm * (2 * np.pi / 60)
-        self.temp = 25.0
+        self.temp = 38.0
 
         self.efficiency_map = None
         if efficiency_csv:
@@ -169,7 +169,7 @@ class MotorInverter:
             rpm = abs(omega_rad_s) * 60 / (2 * np.pi)
             torque_abs = abs(torque_actual)
 
-            efficiency = float(self.efficiency_map(rpm, torque_abs)) * 0.95
+            efficiency = float(self.efficiency_map(rpm, torque_abs)) - 0.05
             # Fallback to peak if lookup is outside the convex hull of provided data
             if np.isnan(efficiency):
                 if not hasattr(self, '_warned_fallback'):

@@ -22,8 +22,8 @@ class VehicleDynamics:
 
         # Physical constants (matching main.py)
         self.rho = self.params.get('rho', 1.225)         # Air density
-        self.cd = self.params.get('cd', 1.2)            # Drag coefficient
-        self.area = self.params.get('frontal_area', 1.0) # Frontal area
+        self.cd = self.params.get('cd', 1.745)            # Drag coefficient
+        self.area = self.params.get('frontal_area', 1.151) # Frontal area
         self.crr = self.params.get('crr', 0.015)         # Rolling resistance
         self.max_brake_accel_g = self.params.get('max_brake_accel_g', 1.5)
         self.g = 9.81
