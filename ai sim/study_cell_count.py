@@ -15,7 +15,6 @@ def simulate_cell_count(count):
         'laps_to_run': 22,
         'num_cells': int(count),
         'motor_config': 'RWD',
-        'regen_enabled': False
     }
     # Run simulation in headless mode
     results = run_simulation(params, verbose=False, plot=False)

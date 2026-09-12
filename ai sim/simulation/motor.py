@@ -111,12 +111,13 @@ class MotorInverter:
     Combined Motor and Inverter model.
     Handles the Emrax 208 or custom front hub motors.
     """
-    def __init__(self, name="Emrax 208", max_torque=140, peak_efficiency=0.86, max_rpm=4500, max_power_kw=86.0, efficiency_csv=None):
+    def __init__(self, name="Emrax 208", max_torque=140, peak_efficiency=0.86, max_rpm=4500, max_power_kw=86.0, efficiency_csv=None, kv=None):
         self.name = name
         self.max_torque = max_torque
         self.peak_efficiency = peak_efficiency
         self.max_power_w = max_power_kw * 1000.0
         self.max_omega = max_rpm * (2 * np.pi / 60)
+        self.kv = kv # RPM per Volt
         self.temp = 38.0
 
         self.efficiency_map = None
@@ -148,16 +149,22 @@ class MotorInverter:
         #else:
             #print(f"[MotorInverter] {self.name}: No map provided. Using peak efficiency {self.peak_efficiency}.")
 
-    def get_mechanical_output(self, torque_request_nm, omega_rad_s):
+    def get_mechanical_output(self, torque_request_nm, omega_rad_s, voltage=None):
         """
         Calculates shaft output and electrical power demand.
         """
+        # Determine dynamic redline based on KV and terminal voltage
+        current_max_omega = self.max_omega
+        if self.kv is not None and voltage is not None:
+            max_omega_elec = (self.kv * voltage) * (2 * np.pi / 60)
+            current_max_omega = min(self.max_omega, max_omega_elec)
+
         # Clamp torque to motor physical limits
         torque_actual = np.clip(torque_request_nm, -self.max_torque, self.max_torque)
 
-        # Speed Limiter: If motor speed exceeds max_rpm, torque is restricted to zero or braking
+        # Speed Limiter: If motor speed exceeds current_max_omega, torque is restricted to zero or braking
         is_redline = False
-        if abs(omega_rad_s) >= self.max_omega:
+        if abs(omega_rad_s) >= current_max_omega:
             is_redline = True
             torque_actual = min(0.0, torque_actual) if omega_rad_s > 0 else max(0.0, torque_actual)
         
@@ -219,6 +226,8 @@ class PowertrainSystem:
     def __init__(self, config='AWD', params=None):
         self.params = params if params is not None else {}
         self.battery = Battery(params=self.params)
+        # Initialize last voltage with nominal pack voltage for the first step
+        self.last_voltage = self.battery.n_series * self.battery.v_nom_cell
         
         # CR30/CR31 Rear: Emrax 208 + Chain
         self.rear_motor = MotorInverter(
@@ -226,7 +235,8 @@ class PowertrainSystem:
             max_torque=self.params.get('rear_motor_max_torque', 150.0), 
             max_rpm=self.params.get('rear_motor_max_rpm', 7000.0), 
             max_power_kw=self.params.get('max_power_kw', 80.0),
-            efficiency_csv=self.params.get('rear_efficiency_csv', '/home/tadayal100/Powertrain_Sim/ai sim/emrax208_efficiency.csv')
+            efficiency_csv=self.params.get('rear_efficiency_csv', '/home/tadayal100/Powertrain_Sim/ai sim/emrax208_efficiency.csv'),
+            kv=self.params.get('rear_motor_kv', 12.0)
         )
         self.rear_trans = Transmission(ratio=self.params.get('rear_gear_ratio', self.params.get('gear_ratio', 4.6))) # Chain
         
@@ -238,8 +248,8 @@ class PowertrainSystem:
             f_pwr = self.params.get('front_motor_max_power_kw', 15.0) # Configurable for study
             f_trq = self.params.get('front_motor_max_torque', 7.0)
             f_rpm = self.params.get('front_motor_max_rpm', 20000.0)
-            self.front_left = MotorInverter("Hub Motor", max_torque=f_trq, max_rpm=f_rpm, max_power_kw=f_pwr, efficiency_csv=self.params.get('front_efficiency_csv'))
-            self.front_right = MotorInverter("Hub Motor", max_torque=f_trq, max_rpm=f_rpm, max_power_kw=f_pwr, efficiency_csv=self.params.get('front_efficiency_csv'))
+            self.front_left = MotorInverter("Hub Motor", max_torque=f_trq, max_rpm=f_rpm, max_power_kw=f_pwr, efficiency_csv=self.params.get('front_efficiency_csv'), kv=self.params.get('front_motor_kv', 42.0))
+            self.front_right = MotorInverter("Hub Motor", max_torque=f_trq, max_rpm=f_rpm, max_power_kw=f_pwr, efficiency_csv=self.params.get('front_efficiency_csv'), kv=self.params.get('front_motor_kv', 42.0))
             self.front_trans = Transmission(ratio=self.params.get('front_gear_ratio', 13.4)) # Gearbox
 
     def step(self, motor_torque_demands, wheel_speeds, dt, battery_temp):
@@ -256,7 +266,7 @@ class PowertrainSystem:
         # Process Rear Motor
         motor_omega_r = wheel_speeds['rear'] * self.rear_trans.ratio
         p_mech_r, p_elec_r, heat_r, tau_r, redline_r = self.rear_motor.get_mechanical_output(
-            motor_torque_demands['rear_motor'], motor_omega_r
+            motor_torque_demands['rear_motor'], motor_omega_r, self.last_voltage
         )
         # Transmission Loss
         trans_loss_r = abs(p_mech_r) * (1.0 - self.rear_trans.efficiency)
@@ -274,12 +284,12 @@ class PowertrainSystem:
             # Front Left
             m_omega_fl = wheel_speeds['front_left'] * self.front_trans.ratio
             pm_fl, pe_fl, h_fl, t_fl, redline_fl = self.front_left.get_mechanical_output(
-                motor_torque_demands['front_left_motor'], m_omega_fl
+                motor_torque_demands['front_left_motor'], m_omega_fl, self.last_voltage
             )
             # Front Right
             m_omega_fr = wheel_speeds['front_right'] * self.front_trans.ratio
             pm_fr, pe_fr, h_fr, t_fr, redline_fr = self.front_right.get_mechanical_output(
-                motor_torque_demands['front_right_motor'], m_omega_fr
+                motor_torque_demands['front_right_motor'], m_omega_fr, self.last_voltage
             )
             
             trans_loss_f = (abs(pm_fl) + abs(pm_fr)) * (1.0 - self.front_trans.efficiency)
@@ -295,6 +305,8 @@ class PowertrainSystem:
 
         # Battery Simulation
         actual_v, batt_heat, applied_p_w = self.battery.draw_power(total_elec_power, dt, battery_temp)
+        self.last_voltage = actual_v # Update voltage for the next time step
+
         # total_heat_gen includes powertrain + battery internal resistance
         total_heat_gen = powertrain_losses + batt_heat
         
