@@ -20,7 +20,7 @@ NOTES:
 
 class SimulationEngine:
     def __init__(self, params=None):
-        self.track_file = 'tracks/endurance.csv'
+        self.track_file = 'simulation/tracks/endurance.csv'
         self.p = {
             'num_cells': 130, 'max_power_kw': 80.0, 'gear_ratio': 3.3, 
             'max_lat_accel_g': 1.8 * 0.95, 'max_brake_accel_g': 1.49 * 0.95, 'max_grip_accel_g': 1.49 * 0.95, # NOTE: taken from  CR30 tractive battery spreadsheet (max accel grip of 0.9656 during endurance)
@@ -701,9 +701,7 @@ if __name__ == "__main__":
 
     run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': True, 'max_regen_power_kw': 2.0, 'max_power_kw': 80.0,
                     'rear_motor_max_torque': 220.0, 'rear_motor_max_rpm': 4500.0, 'gear_ratio': 3.2})
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': True, 'max_regen_power_kw': 2.0, 'max_power_kw': 80.0,
-                    'rear_motor_max_torque': 140.0, 'rear_motor_max_rpm': 6000.0, 'gear_ratio': 3.2})
 
     # NOTE: change log file directory
-    '''log = '/home/tadayal100/Powertrain_Sim/ai sim/logs/5-30-test-weekend-logs/LOG_037.CSV'
+    '''log = '/home/tadayal100/Powertrain_Sim/simulation/logs/5-30-test-weekend-logs/LOG_037.CSV'
     sim.validate_thermal_from_log(log)'''
