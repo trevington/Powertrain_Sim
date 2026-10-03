@@ -1,12 +1,9 @@
 import pygame
 import sys
-import os
+from pathlib import Path
 import numpy as np
 from collections import deque
-
-# Ensure we can import from the simulation directory
-sys.path.append(os.path.join(os.path.dirname(__file__), 'simulation'))
-from main import SimulationEngine
+from maine.main import SimulationEngine
 
 class LiveVisualizer:
     def __init__(self, config_params=None):

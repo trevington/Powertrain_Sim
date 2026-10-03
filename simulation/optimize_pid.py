@@ -3,9 +3,7 @@ import sys
 import os
 import numpy as np
 
-# Ensure we can import the simulation engine from the 'simulation' subdirectory
-sys.path.append(os.path.join(os.path.dirname(__file__), 'simulation'))
-from main import run_simulation
+from maine.main import run_simulation
 
 def objective(trial):
     # Suggest parameters for the driver's steering PID and path following lookahead
@@ -68,7 +66,7 @@ if __name__ == "__main__":
         load_if_exists=True)
 
     # n_jobs=-1 uses all available CPU cores
-    study.optimize(objective, n_trials=100, n_jobs=-1)
+    study.optimize(objective, n_trials=10, n_jobs=-1)
     
     print("\n" + "="*40)
     print("OPTIMIZATION RESULTS")

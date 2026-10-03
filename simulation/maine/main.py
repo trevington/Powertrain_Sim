@@ -5,12 +5,21 @@ import csv
 import os
 import glob
 from scipy.interpolate import RegularGridInterpolator
-from driver import PathCommander
-from powertrain import PowertrainController
-from motor import PowertrainSystem
-from vd import VehicleDynamics
-from tb_thermal import TractiveBatteryThermal
-from scoring import FSAEScorer
+
+try:
+    from maine.driver import PathCommander
+    from maine.powertrain import PowertrainController
+    from maine.motor import PowertrainSystem
+    from maine.vd import VehicleDynamics
+    from maine.tb_thermal import TractiveBatteryThermal
+    from maine.scoring import FSAEScorer
+except ImportError:
+    from driver import PathCommander
+    from powertrain import PowertrainController
+    from motor import PowertrainSystem
+    from vd import VehicleDynamics
+    from tb_thermal import TractiveBatteryThermal
+    from scoring import FSAEScorer
 
 '''
 NOTES:

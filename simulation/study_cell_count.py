@@ -5,8 +5,11 @@ import os
 from concurrent.futures import ProcessPoolExecutor
 
 # Ensure we can import the simulation engine
-sys.path.append(os.path.join(os.path.dirname(__file__), 'simulation'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '\\simulation\\maine'))
+#from main import run_simulation
+
 from main import run_simulation
+
 
 def simulate_cell_count(count):
     """Worker function to run a single simulation instance."""
