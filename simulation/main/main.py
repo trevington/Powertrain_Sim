@@ -4,22 +4,68 @@ from matplotlib.collections import LineCollection
 import csv
 import os
 import glob
+import tempfile
 from scipy.interpolate import RegularGridInterpolator
 
+MAIN_DIR = os.path.dirname(os.path.abspath(__file__))
+SIM_DIR = os.path.dirname(MAIN_DIR)
+
+def _resolve_path(path, default_subpath=''):
+    """Resolve a file path relative to CWD, SIM_DIR, or default subpath."""
+    if not path:
+        return path
+    if os.path.isabs(path) and os.path.exists(path):
+        return path
+
+    clean_path = path
+    for prefix in ('simulation/', 'simulation\\'):
+        if clean_path.startswith(prefix):
+            clean_path = clean_path[len(prefix):]
+            break
+
+    candidates = [
+        path,
+        clean_path,
+        os.path.join(SIM_DIR, clean_path),
+        os.path.join(SIM_DIR, path),
+        os.path.join(MAIN_DIR, path),
+        os.path.join(MAIN_DIR, clean_path),
+    ]
+    if default_subpath:
+        candidates.extend([
+            os.path.join(SIM_DIR, default_subpath, clean_path),
+            os.path.join(SIM_DIR, default_subpath, os.path.basename(path)),
+        ])
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return os.path.abspath(candidate)
+
+    if default_subpath:
+        return os.path.abspath(os.path.join(SIM_DIR, default_subpath, os.path.basename(path)))
+    return os.path.abspath(os.path.join(SIM_DIR, clean_path))
+
 try:
-    from maine.driver import PathCommander
-    from maine.powertrain import PowertrainController
-    from maine.motor import PowertrainSystem
-    from maine.vd import VehicleDynamics
-    from maine.tb_thermal import TractiveBatteryThermal
-    from maine.scoring import FSAEScorer
+    from simulation.main.driver import PathCommander
+    from simulation.main.powertrain import PowertrainController
+    from simulation.main.motor import PowertrainSystem
+    from simulation.main.vd import VehicleDynamics
+    from simulation.main.tb_thermal import TractiveBatteryThermal
+    from simulation.main.scoring import FSAEScorer
 except ImportError:
-    from driver import PathCommander
-    from powertrain import PowertrainController
-    from motor import PowertrainSystem
-    from vd import VehicleDynamics
-    from tb_thermal import TractiveBatteryThermal
-    from scoring import FSAEScorer
+    try:
+        from driver import PathCommander
+        from powertrain import PowertrainController
+        from motor import PowertrainSystem
+        from vd import VehicleDynamics
+        from tb_thermal import TractiveBatteryThermal
+        from scoring import FSAEScorer
+    except ImportError:
+        from .driver import PathCommander
+        from .powertrain import PowertrainController
+        from .motor import PowertrainSystem
+        from .vd import VehicleDynamics
+        from .tb_thermal import TractiveBatteryThermal
+        from .scoring import FSAEScorer
 
 '''
 NOTES:
@@ -29,7 +75,7 @@ NOTES:
 
 class SimulationEngine:
     def __init__(self, params=None):
-        self.track_file = 'simulation/tracks/endurance.csv'
+        default_eff_csv = os.path.join(SIM_DIR, 'emrax208_efficiency.csv')
         self.p = {
             'num_cells': 130, 'max_power_kw': 80.0, 'gear_ratio': 3.3, 
             'max_lat_accel_g': 1.8 * 0.95, 'max_brake_accel_g': 1.49 * 0.95, 'max_grip_accel_g': 1.49 * 0.95, # NOTE: taken from  CR30 tractive battery spreadsheet (max accel grip of 0.9656 during endurance)
@@ -44,7 +90,7 @@ class SimulationEngine:
             'downforce_coeff': 4.058, # NOTE: from aero data (9/11/26)
             'rear_motor_max_torque': 220.0, 'rear_motor_max_rpm': 6000.0, 'rear_motor_kv': 8.68, # Emrax 228
             'front_motor_max_power_kw': 10.0, 'front_motor_max_torque': 4.7, 'front_motor_max_rpm': 20000.0, 'front_motor_kv': 42.0, 'front_gear_ratio': 13.4, # MotorCAD, 480V 25A sim (NOTE: needs to be updated aaa)
-            'rear_efficiency_csv': 'emrax208_efficiency.csv', # NOTE: from Emrax 208 datasheet, incorrect so applying 95% in motor.py
+            'rear_efficiency_csv': default_eff_csv, # NOTE: from Emrax 208 datasheet, incorrect so applying 95% in motor.py
             'regen_enabled': True,
             'max_regen_power_kw': 2.0,
             'dcir_safety_factor': 1.5 * 1.096226, # NOTE: optmized 1.096226 (optimize_thermal.py)
@@ -52,6 +98,14 @@ class SimulationEngine:
             'h_fan': 0.717338 # NOTE: optimized 0.71738 (optimize_thermal.py)
         }
         if params: self.p.update(params)
+
+        if self.p.get('rear_efficiency_csv'):
+            self.p['rear_efficiency_csv'] = _resolve_path(self.p['rear_efficiency_csv'])
+        if self.p.get('front_efficiency_csv'):
+            self.p['front_efficiency_csv'] = _resolve_path(self.p['front_efficiency_csv'])
+
+        raw_track_file = self.p.get('track_file', 'tracks/endurance.csv')
+        self.track_file = _resolve_path(raw_track_file, 'tracks')
         self.mode = self.p.get('mode', 'Endurance')
 
         self.dt, self.total_time, self.g = 0.008, 1800.0, 9.81
@@ -74,13 +128,15 @@ class SimulationEngine:
             return [[0.0, 0.0, self.p['max_v'], 0.0], [150.0, 0.0, self.p['max_v'], 0.0]]
 
         coords = []
+        if not os.path.exists(self.track_file):
+            self.track_file = _resolve_path(self.track_file, 'tracks')
         try:
             with open(self.track_file, 'r') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     coords.append((float(row['X coord (m)']), float(row['Y coord (m)'])))
         except FileNotFoundError:
-            return []
+            raise FileNotFoundError(f"Track file not found: {self.track_file}")
 
         waypoints = []
         max_lat_accel, max_brake_accel, max_grip_accel = self.p['max_lat_accel_g']*self.g, self.p['max_brake_accel_g']*self.g, self.p['max_grip_accel_g']*self.g
@@ -524,7 +580,8 @@ class SimulationEngine:
 def run_simulation(params=None, verbose=True, plot=True):
     sim = SimulationEngine(params)
     sim.run(verbose=verbose)
-    res = sim.get_results(verbose=verbose, log_file='performance_comparison.csv' if verbose else '/tmp/performance_comparison_opt.csv')
+    opt_log = os.path.join(tempfile.gettempdir(), 'performance_comparison_opt.csv')
+    res = sim.get_results(verbose=verbose, log_file='performance_comparison.csv' if verbose else opt_log)
     if plot:
         eb = {'Aero Drag': sim.total_aero_j, 'Roll Resistance': sim.total_rr_j, 'Kinetic Energy': sim.total_accel_j, 'Heat Losses': sim.total_heat_j, 'GLV System': 1000 * sim.final_time, 'Regen Recovery': sim.total_regen_j}
         idx = sim.lap_times.index(res['best_lap_time'])
@@ -703,14 +760,14 @@ def _plot_results(laps_data, labels, waypoints=None, energy_breakdown=None, sess
     
 if __name__ == "__main__":
     # Create the simulation engine
-    #sim = SimulationEngine()
+    # sim = SimulationEngine()
     # Run the thermal validation study against all physical logs in the folder
-    #logs_dir = '/home/tadayal100/Powertrain_Sim/ai sim/logs/'
-    #sim.run_thermal_batch_study(logs_dir)
+    # logs_dir = os.path.join(SIM_DIR, 'logs')
+    # sim.run_thermal_batch_study(logs_dir)
 
     run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': True, 'max_regen_power_kw': 2.0, 'max_power_kw': 80.0,
                     'rear_motor_max_torque': 220.0, 'rear_motor_max_rpm': 4500.0, 'gear_ratio': 3.2})
 
     # NOTE: change log file directory
-    '''log = '/home/tadayal100/Powertrain_Sim/simulation/logs/5-30-test-weekend-logs/LOG_037.CSV'
-    sim.validate_thermal_from_log(log)'''
+    # log = os.path.join(SIM_DIR, 'logs', '5-30-test-weekend-logs', 'LOG_037.CSV')
+    # sim.validate_thermal_from_log(log)
