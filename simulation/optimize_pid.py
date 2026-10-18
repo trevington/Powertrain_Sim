@@ -3,7 +3,7 @@ import sys
 import os
 import numpy as np
 
-from maine.main import run_simulation
+from main.main import run_simulation
 
 def objective(trial):
     # Suggest parameters for the driver's steering PID and path following lookahead
