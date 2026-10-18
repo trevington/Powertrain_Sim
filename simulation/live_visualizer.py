@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 import numpy as np
 from collections import deque
-from maine.main import SimulationEngine
+from main.main import SimulationEngine
 
 class LiveVisualizer:
     def __init__(self, config_params=None):
