@@ -6,7 +6,7 @@ import glob
 
 # Ensure we can import the simulation engine
 sys.path.append(os.path.join(os.path.dirname(__file__), 'simulation'))
-from main import SimulationEngine
+from main.main import SimulationEngine
 
 def objective(trial):
     # Define the parameter search space
