@@ -5,21 +5,23 @@ import numpy as np
 import glob
 
 # Ensure we can import the simulation engine
-sys.path.append(os.path.join(os.path.dirname(__file__), 'simulation'))
-from main import SimulationEngine
+from main.main import SimulationEngine
 
 def objective(trial):
     # Define the parameter search space
     params = {
+        'cell_count': 140,
+        'gear_ratio': 4.6,
+        'ambient_temp': 27.0,
+        'rear_motor_max_torque': 140.0, 'rear_motor_max_rpm': 6000.0, 'rear_motor_kv': 8.68, 'regen_enabled': False,# Emrax 208
         # Scaling the empirical resistance (Generation)
         'dcir_safety_factor': trial.suggest_float('dcir_safety_factor', 0.5, 2.0),
         # Thermal mass (Inertia)
         'battery_cp': trial.suggest_float('battery_cp', 600.0, 1500.0),
         # Convection coefficient (Cooling)
-        'h_fan': trial.suggest_float('h_fan', 0.0, 20.0),
+        'h_fan': trial.suggest_float('h_fan', 0.0, 50.0),
     }
 
-    sim = SimulationEngine(params)
     # Use path relative to this script to avoid absolute path issues
     script_dir = os.path.dirname(os.path.abspath(__file__))
     logs_dir = os.path.join(script_dir, 'logs')
@@ -36,7 +38,7 @@ def objective(trial):
     for log_path in all_logs:
         try:
             # Run validation for each log using the suggested params
-            res = sim.validate_thermal_from_log(log_path, show_plot=False)
+            res = SimulationEngine(params).validate_thermal_from_log(log_path, show_plot=False)
             # We want to minimize Mean Absolute Error (MAE)
             errors.append(res['mean_error'])
         except Exception as e:
@@ -55,7 +57,7 @@ if __name__ == "__main__":
     study = optuna.create_study(direction='minimize', storage=storage_name, load_if_exists=True)
     
     print("Starting Thermal Model Parameter Optimization...")
-    study.optimize(objective, n_trials=100, n_jobs=-1)
+    study.optimize(objective, n_trials=100, n_jobs=24)
 
     print("\n" + "="*40)
     print("OPTIMIZED THERMAL PARAMETERS")
@@ -66,6 +68,6 @@ if __name__ == "__main__":
 
     # Verification: Run the batch study one last time with best params
     print("\nGenerating final comparison plot...")
-    best_sim = SimulationEngine(study.best_params)
+    best_sim = SimulationEngine(study.best_params, False, False)
     best_sim.run_thermal_batch_study('/home/tadayal100/Powertrain_Sim/ai sim/logs/')
     print("Results saved to thermal_batch_comparison.png")

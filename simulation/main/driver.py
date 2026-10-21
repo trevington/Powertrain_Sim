@@ -193,14 +193,9 @@ class PathCommander:
         
         # 3. Feedback Steering (Stanley)
         v = state['v']
-        k_s = 1.0 
-        
-        # Dynamic Gain: Boost Stanley gain if we are significantly off track to force recovery
-        dynamic_k = self.k_stanley
-        if abs(cross_track_error) > 2.25:
-            dynamic_k *= 1.5
+        k_s = self.k_stanley
             
-        steering_fb = heading_error - np.arctan2(dynamic_k * cross_track_error, k_s + v)
+        steering_fb = heading_error - np.arctan2(cross_track_error, k_s + v)
         
         # 4. Feed-Forward Steering (Ackermann geometry based)
         # delta_ff = atan(Wheelbase / Radius) = atan(Wheelbase * Curvature)
