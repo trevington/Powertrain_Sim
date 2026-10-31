@@ -5,6 +5,8 @@ class FSAEScorer:
     Calculates points based on FSAE Electric rules for the Endurance event.
     Note: These formulas typically require the time/energy of the fastest 
     completing car (T_min, E_min) and the slowest (T_max).
+
+    NOTE: Doesn't work. use relative performance instead.
     """
     def __init__(self, t_min_limit=1.45, e_min_limit=1.0):
         self.t_min_limit = t_min_limit

@@ -18,6 +18,8 @@ def simulate_cell_count(count):
         'laps_to_run': 22,
         'num_cells': int(count),
         'motor_config': 'RWD',
+        'regen_enabled': False,
+        'aero_dist_rear': 0.55
     }
     # Run simulation in headless mode
     results = run_simulation(params, verbose=False, plot=False)
@@ -29,7 +31,7 @@ def run_cell_count_study():
     voltage/energy capacity and vehicle mass.
     """
     # Sweep from a smaller pack (e.g., 80 cells) to the FSAE voltage limit (~140 cells)
-    cell_counts = np.arange(105, 150, 5)
+    aero_v_1 = 
     
     session_times = []
     energy_used_pct = []

@@ -77,25 +77,55 @@ class SimulationEngine:
     def __init__(self, params=None):
         default_eff_csv = os.path.join(SIM_DIR, 'emrax208_efficiency.csv')
         self.p = {
-            'num_cells': 130, 'max_power_kw': 80.0, 'gear_ratio': 3.3, 
-            'max_lat_accel_g': 1.8 * 0.95, 'max_brake_accel_g': 1.49 * 0.95, 'max_grip_accel_g': 1.49 * 0.95, # NOTE: taken from  CR30 tractive battery spreadsheet (max accel grip of 0.9656 during endurance)
-            'max_v': 40.0, 'ambient_temp': 25.0, 'initial_battery_temp': 38.0, # NOTE: taken from CR30 tractive battery spreadsheet
-            'laps_to_run': 22, 'motor_config': 'RWD',
-            'k_stanley': 9.662335, 
-            'kp_accel': 0.998771, 'ki_accel': 0.001076, 'kd_accel': 1.185468,
-            'kp_brake': 0.998771, 'ki_brake': 0.001076, 'kd_brake': 1.185468,
-            'look_ahead_indices': 1, 'look_ahead_v_scale': 0.035914,# NOTE: optimized values (optimize_driver.py)
-            'wheelbase': 1.535, 'mode': 'Endurance', 'h_cg': 0.3302, # NOTE: from erick accel sim
-            'weight_dist_rear': 0.53, 'aero_dist_rear': 0.55, # NOTE: from erick accel sim
-            'downforce_coeff': 4.058, # NOTE: from aero data (9/11/26)
-            'rear_motor_max_torque': 220.0, 'rear_motor_max_rpm': 6000.0, 'rear_motor_kv': 8.68, # Emrax 228
-            'front_motor_max_power_kw': 10.0, 'front_motor_max_torque': 4.7, 'front_motor_max_rpm': 20000.0, 'front_motor_kv': 42.0, 'front_gear_ratio': 13.4, # MotorCAD, 480V 25A sim (NOTE: needs to be updated aaa)
+            'laps_to_run': 22,
+            'mode': 'Endurance',
+
+            # Vehicle Dynamics
+            'max_lat_accel_g': 1.8 * 0.95, 
+            'max_brake_accel_g': 1.49 * 0.95, 
+            'max_grip_accel_g': 1.49 * 0.95, # NOTE: taken from  CR30 tractive battery spreadsheet (max accel grip of 0.9656 during endurance)
+
+            # Driver
+            'max_v': 72.390872, # NOTE: optimized 72.390872 (optimize_pid.py)
+            'k_stanley': 1.608568, # NOTE: optimized value (optimize_driver.py)
+            'kp_accel': 0.291881, 'ki_accel': 0.195458, 'kd_accel': 0.917792, # NOTE: optimized values (optimize_driver.py)
+            'kp_brake': 2.992147, 'ki_brake': 0.003518, 'kd_brake': 0.019542, # NOTE: optimized values (optimize_driver.py)
+            'look_ahead_indices': 1, 'look_ahead_v_scale': 0.004599,# NOTE: optimized values (optimize_driver.py)
+            'wheelbase': 1.535, 'h_cg': 0.3302, # NOTE: from erick accel sim | TODO: consider using seperate front/rear wheelbase
+            'weight_dist_rear': 0.53, # NOTE: from erick accel sim
+            
+            # Aero
+            'cl': 4.0728, # NOTE: from aero data no drs (10/24/26)
+            'aero_dist_rear': 0.53, # NOTE: from aero data no drs (10/24/26)
+            #'aero_v': np.array([25, 35, 45, 55, 65, 75]) * 0.44704, # Convert from mph to m/s
+            #'aero_drag': np.array([30, 59, 99, 148, 207, 275]) * 4.44822, # Convert from lbf to N
+            'frontal_area': 1.0669, # NOTE: from aero data (10/24/26)
+            "cd": 1.7202, # NOTE: from aero data no drs 30m/s (10/24/26)
+            'rho': 1.225, # Air density (kg/m^3) TODO: ideal gas law
+            
+            # Motah
+            'motor_config': 'RWD',
+            'regen_enabled': False, 
+            'max_regen_power_kw': 11.554123, # NOTE : optimized 11.554123 (optimize_pid.py) 
+                # Emrax 228 rear motor
+            'rear_motor_max_torque': 220.0, #NOTE: from Emrax 228 datasheet
+            'gear_ratio': 4.0, # NOTE optimized 2.132808 (optimize_pid.py)
+            'rear_motor_max_rpm': 4500.0, # NOTE: from Emrax 228 datasheet (TODO: consider just using kV method)
+            'rear_motor_kv': 8.68, # NOTE: from Emrax 228 datasheet (TODO: peak load, should be adaptive load eventually)
             'rear_efficiency_csv': default_eff_csv, # NOTE: from Emrax 208 datasheet, incorrect so applying 95% in motor.py
-            'regen_enabled': True,
-            'max_regen_power_kw': 2.0,
-            'dcir_safety_factor': 1.5 * 1.096226, # NOTE: optmized 1.096226 (optimize_thermal.py)
+                # Hub motors
+            'front_motor_max_power_kw': 10.0, 'front_motor_max_torque': 4.7, 'front_motor_max_rpm': 20000.0, 'front_motor_kv': 42.0, 'front_gear_ratio': 13.4, # MotorCAD, 480V 25A sim (NOTE: needs to be updated aaa)
+            
+            # Tractive Battery
+            'max_power_kw': 72.169689, # NOTE: Optimized 72.169689 (optimize_pid.py)
+            'num_cells': 130,
+            'dcir_safety_factor': 0.5 + 1.096226, # NOTE: optmized 1.096226 (optimize_thermal.py)
+                # Thermals
+            'ambient_temp': 40.0, # NOTE: ambient temp of rear chassis
             'battery_cp': 1377.265173, # NOTE: optimized 1377.265173 (optimize_thermal.py) 
-            'h_fan': 0.717338 # NOTE: optimized 0.71738 (optimize_thermal.py)
+            'h_fan': 0.717338, # NOTE: optimized 0.71738 (optimize_thermal.py)
+            'cell_surface_area': 0.109 * 0.00878, # NOTE: estimated cell surface area (m^2)
+            'initial_battery_temp': 38.0 # NOTE: taken from CR30 tractive battery spreadsheet
         }
         if params: self.p.update(params)
 
@@ -112,8 +142,15 @@ class SimulationEngine:
         cell_mass = 0.2667
         self.mass = (292.0 - (140 * cell_mass)) + (self.p['num_cells'] * cell_mass)
         # Aero
-        self.aero_v_ms = np.array([25, 35, 45, 55, 65, 75]) * 0.44704
-        self.aero_drag_n = np.array([30, 59, 99, 148, 207, 275]) * 4.44822
+        if self.p.get('aero_v'):
+            self.aero_v_ms = self.p['aero_v']
+        if self.p.get('aero_drag'):
+            self.aero_drag_n = self.p['aero_drag']
+        self.rho = self.p.get('rho', 1.225)         # Air density
+        self.cd = self.p.get('cd', 1.7202)            # Drag coefficient
+        self.cl = self.p.get('cl', 4.0728)          # lift coefficient
+        self.area = self.p.get('frontal_area', 1.151) # Frontal area
+        
         # Rolling Resistance
         self.rr_v_ms = np.array([5.56, 11.11, 16.67, 22.22, 27.78, 33.33])
         self.rr_coeff = np.array([0.015, 0.0165, 0.018, 0.021, 0.025, 0.028])
@@ -178,7 +215,10 @@ class SimulationEngine:
                 v_curr = max(waypoints[i][2], 1.0) # Avoid division by zero
                 
                 p_prop = (self.p['max_power_kw'] * 1000.0) / (self.mass * v_curr) # F = P/v
-                f_drag = np.interp(v_curr, self.aero_v_ms, self.aero_drag_n, left=0.0)
+                if not hasattr(self, 'aero_v_ms') or not hasattr(self, 'aero_drag_n'):
+                    f_drag = 0.5 * self.rho * self.cd * self.area * v_curr**2
+                else:
+                    f_drag = np.interp(v_curr, self.aero_v_ms, self.aero_drag_n, left=0.0)
                 f_rr = 0.015 * self.mass * self.g
 
                 dynamic_max_accel = max(0.0, min(max_grip_accel, p_prop) - (f_drag / self.mass) - (f_rr / self.mass))
@@ -247,7 +287,7 @@ class SimulationEngine:
 
         # Updated Aero Model: Quadratic Downforce
         v_curr = self.state['v']
-        self.state['f_downforce'] = (self.p['downforce_coeff'] * v_curr**2)
+        self.state['f_downforce'] = (0.5 * self.rho * self.cl * self.area * v_curr**2)
         f_drag_lookup = np.interp(v_curr, self.aero_v_ms, self.aero_drag_n, left=0.0)
 
         demands = self.controller.calculate_demands(throttle_pct, steering_angle, self.state, self.wheel_speeds, self.dt)
@@ -311,7 +351,7 @@ class SimulationEngine:
             self.history[k].append(v)
 
         # Safety Stops: Battery Temperature (> 60C) and Energy Depletion (SOE <= 0)
-        if self.battery_temp > 60.0 or motor_outputs.get('soe_pct', 0.0) <= 0.0:
+        if self.battery_temp >= 60.0 or motor_outputs.get('soe_pct', 0.0) <= 0.0:
             self.final_time = t
             if verbose:
                 reason = "Overheat" if self.battery_temp > 60.0 else "Depletion"
@@ -438,7 +478,7 @@ class SimulationEngine:
         heating_rate = total_delta_t / non_zero_power_time if non_zero_power_time > 0 else 0
         
         rel_path = os.path.join(os.path.basename(os.path.dirname(csv_path)), os.path.basename(csv_path))
-        print(f"Validation Complete [{rel_path}]: Mean Error: {mean_err:.3f}°C | Max Error: {max_err:.3f}°C | Heating Rate: {heating_rate:.5f}°C/s")
+        #print(f"Validation Complete [{rel_path}]: Mean Error: {mean_err:.3f}°C | Max Error: {max_err:.3f}°C | Heating Rate: {heating_rate:.5f}°C/s")
         
         if show_plot:
             # Plotting Validation
@@ -574,8 +614,7 @@ class SimulationEngine:
             'energy_used_wh': energy_used_wh,
             'final_temp': self.battery_temp,
             'final_soe': self.history['soe'][-1] if self.history['soe'] else 0.0,
-            'mean_abs_jerk': mean_abs_jerk
-        }
+            'min_v_error': np.min(np.array(self.history['v_target']) - np.array(self.history['v'])) if self.history['v_target'] and self.history['v'] else 999.0        }
 
 def run_simulation(params=None, verbose=True, plot=True):
     sim = SimulationEngine(params)
@@ -765,8 +804,7 @@ if __name__ == "__main__":
     # logs_dir = os.path.join(SIM_DIR, 'logs')
     # sim.run_thermal_batch_study(logs_dir)
 
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': True, 'max_regen_power_kw': 2.0, 'max_power_kw': 80.0,
-                    'rear_motor_max_torque': 220.0, 'rear_motor_max_rpm': 4500.0, 'gear_ratio': 3.2})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': False, 'gear_ratio': 3.6})
 
     # NOTE: change log file directory
     # log = os.path.join(SIM_DIR, 'logs', '5-30-test-weekend-logs', 'LOG_037.CSV')
