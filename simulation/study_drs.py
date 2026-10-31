@@ -16,7 +16,9 @@ def simulate_cell_count(count):
     params = {
         'mode': 'Endurance',
         'laps_to_run': 22,
-        'num_cells': int(count)
+        'num_cells': int(count),
+        'DRS_open': True,
+        'rear_motor_kv': 12.05
     }
     # Run simulation in headless mode
     results = run_simulation(params, verbose=False, plot=False)
@@ -27,8 +29,8 @@ def run_cell_count_study():
     Sweeps battery cell count to analyze the trade-off between 
     voltage/energy capacity and vehicle mass.
     """
-    # Sweep from a smaller pack (e.g., 80 cells) to the FSAE voltage limit (~140 cells)
-    cell_counts = np.arange(105, 150, 5)
+    # Sweep of cell counts
+    cell_counts = np.arange(75, 135, 5)
     
     session_times = []
     energy_used_pct = []
