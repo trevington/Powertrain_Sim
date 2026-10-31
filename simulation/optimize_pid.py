@@ -6,9 +6,6 @@ import tempfile
 from func_timeout import func_timeout, FunctionTimedOut 
 from concurrent.futures import ProcessPoolExecutor, TimeoutError
 
-MAIN_DIR = os.path.dirname(os.path.abspath(__file__))
-SIM_DIR = os.path.dirname(MAIN_DIR)
-
 from main.main import run_simulation
 
 def objective(trial):
