@@ -4,7 +4,6 @@ import sys
 import numpy as np
 import glob
 
-# Ensure we can import the simulation engine
 from main.main import SimulationEngine
 
 def objective(trial):
