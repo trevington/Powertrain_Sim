@@ -94,13 +94,19 @@ class SimulationEngine:
             'wheelbase': 1.535, 'h_cg': 0.3302, # NOTE: from erick accel sim | TODO: consider using seperate front/rear wheelbase
             'weight_dist_rear': 0.53, # NOTE: from erick accel sim
             
-            # Aero
-            'cl': 4.0728, # NOTE: from aero data no drs (10/24/26)
-            'aero_dist_rear': 0.53, # NOTE: from aero data no drs (10/24/26)
+                # Aero
+            'DRS_open': True,
+            'cl_drs': 3.323, # NOTE: from aero data no drs 15.6m/s (10/24/26)
+            'cl_no_drs': 4.0728, # NOTE: from aero data no drs 15.6m/s (10/24/26)
+            'cd_no_drs': 1.7202, # NOTE: from aero data no drs 15.6m/s (10/24/26)
+            'cd_drs': 1.1508, # NOTE: from aero data no drs 15.6m/s (10/24/26)
+
+            'aero_dist_rear_drs': 1.0 - 0.6554, # NOTE: from aero data no drs 15.6m/s(10/24/26)
+            'aero_dist_rear_no_drs': 1.0 - 0.4718, # NOTE: from aero data no drs 15.6m/s (10/24/26)
             #'aero_v': np.array([25, 35, 45, 55, 65, 75]) * 0.44704, # Convert from mph to m/s
             #'aero_drag': np.array([30, 59, 99, 148, 207, 275]) * 4.44822, # Convert from lbf to N
+            
             'frontal_area': 1.0669, # NOTE: from aero data (10/24/26)
-            "cd": 1.7202, # NOTE: from aero data no drs 30m/s (10/24/26)
             'rho': 1.225, # Air density (kg/m^3) TODO: ideal gas law
             
             # Motah
@@ -146,9 +152,15 @@ class SimulationEngine:
             self.aero_v_ms = self.p['aero_v']
         if self.p.get('aero_drag'):
             self.aero_drag_n = self.p['aero_drag']
-        self.rho = self.p.get('rho', 1.225)         # Air density
-        self.cd = self.p.get('cd', 1.7202)            # Drag coefficient
-        self.cl = self.p.get('cl', 4.0728)          # lift coefficient
+
+        if self.p.get('DRS_open'):
+            self.cd = self.p.get('cd_drs', 1.1508)
+            self.cl = self.p.get('cl_drs', 4.0728)
+        else:
+            self.cd = self.p.get('cd_no_drs', 1.7202)
+            self.cl = self.p.get('cl_no_drs', 4.0728)
+
+        self.rho = self.p.get('rho', 1.225)           # Air density
         self.area = self.p.get('frontal_area', 1.151) # Frontal area
         
         # Rolling Resistance
@@ -288,7 +300,7 @@ class SimulationEngine:
         # Updated Aero Model: Quadratic Downforce
         v_curr = self.state['v']
         self.state['f_downforce'] = (0.5 * self.rho * self.cl * self.area * v_curr**2)
-        f_drag_lookup = np.interp(v_curr, self.aero_v_ms, self.aero_drag_n, left=0.0)
+        f_drag = 0.5 * self.rho * self.cd * self.area * v_curr**2
 
         demands = self.controller.calculate_demands(throttle_pct, steering_angle, self.state, self.wheel_speeds, self.dt)
         motor_outputs = self.powertrain.step(demands['motor_torques'], self.wheel_speeds, self.dt, self.battery_temp)
@@ -317,7 +329,7 @@ class SimulationEngine:
             'fl_wheel_torque': motor_outputs.get('fl_wheel_torque', 0),
             'fr_wheel_torque': motor_outputs.get('fr_wheel_torque', 0),
             'mechanical_brake_pct': demands['mechanical_brake_pct'],
-            'external_drag': f_drag_lookup
+            'external_drag': f_drag
         }
         new_state, self.wheel_speeds = self.vd.step(physics_in, steering_angle, self.dt)
         
@@ -326,7 +338,7 @@ class SimulationEngine:
         self.state.update(new_state)
 
         v_curr = self.state['v']
-        self.total_aero_j += f_drag_lookup * v_curr * self.dt
+        self.total_aero_j += f_drag * v_curr * self.dt
         self.total_rr_j += np.interp(v_curr, self.rr_v_ms, self.rr_coeff) * self.mass * self.g * v_curr * self.dt
         if v_curr > v_prev: self.total_accel_j += self.mass * ((v_curr - v_prev) / self.dt) * v_curr * self.dt
         if motor_outputs['p_net_w'] < 0: self.total_regen_j += abs(motor_outputs['p_net_w']) * self.dt
@@ -804,7 +816,10 @@ if __name__ == "__main__":
     # logs_dir = os.path.join(SIM_DIR, 'logs')
     # sim.run_thermal_batch_study(logs_dir)
 
-    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': False, 'gear_ratio': 3.6})
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': False, 'gear_ratio': 4.0, 'DRS_open': True})
+
+    run_simulation({'mode': 'Endurance', 'laps_to_run': 22, 'motor_config': 'RWD', 'regen_enabled': False, 'gear_ratio': 4.0, 'DRS_open': False})
+
 
     # NOTE: change log file directory
     # log = os.path.join(SIM_DIR, 'logs', '5-30-test-weekend-logs', 'LOG_037.CSV')
