@@ -94,12 +94,13 @@ class SimulationEngine:
             'wheelbase': 1.535, 'h_cg': 0.3302, # NOTE: from erick accel sim | TODO: consider using seperate front/rear wheelbase
             'weight_dist_rear': 0.53, # NOTE: from erick accel sim
             
-                # Aero
+            # Aero (Lookup Data from Angelo, for DRS and No DRS)
             'DRS_open': True,
-            'cl_drs': 3.323, # NOTE: from aero data no drs 15.6m/s (10/24/26)
-            'cl_no_drs': 4.0728, # NOTE: from aero data no drs 15.6m/s (10/24/26)
-            'cd_no_drs': 1.7202, # NOTE: from aero data no drs 15.6m/s (10/24/26)
-            'cd_drs': 1.1508, # NOTE: from aero data no drs 15.6m/s (10/24/26)
+            'aero_v_mph': np.array([0, 35, 65]),
+            'drag_closed_lbf': np.array([0, 61.86, 190.76]),
+            'drag_open_lbf': np.array([0, 41.38, 139.94]),
+            'df_closed_lbf': np.array([0, 146.46, 494.94]),
+            'df_open_lbf': np.array([0, 119.49, 410.92]),
 
             'aero_dist_rear_drs': 1.0 - 0.6554, # NOTE: from aero data no drs 15.6m/s(10/24/26)
             'aero_dist_rear_no_drs': 1.0 - 0.4718, # NOTE: from aero data no drs 15.6m/s (10/24/26)
@@ -147,18 +148,19 @@ class SimulationEngine:
         self.dt, self.total_time, self.g = 0.008, 1800.0, 9.81
         cell_mass = 0.2667
         self.mass = (292.0 - (140 * cell_mass)) + (self.p['num_cells'] * cell_mass)
-        # Aero
-        if self.p.get('aero_v'):
-            self.aero_v_ms = self.p['aero_v']
-        if self.p.get('aero_drag'):
-            self.aero_drag_n = self.p['aero_drag']
+       # Aero Initialization
+        self.aero_v_ms = self.p['aero_v_mph'] * 0.44704
+        self.aero_drag_closed_n = self.p['drag_closed_lbf'] * 4.44822
+        self.aero_drag_open_n = self.p['drag_open_lbf'] * 4.44822
+        self.aero_df_closed_n = self.p['df_closed_lbf'] * 4.44822
+        self.aero_df_open_n = self.p['df_open_lbf'] * 4.44822
 
-        if self.p.get('DRS_open'):
-            self.cd = self.p.get('cd_drs', 1.1508)
-            self.cl = self.p.get('cl_drs', 4.0728)
-        else:
-            self.cd = self.p.get('cd_no_drs', 1.7202)
-            self.cl = self.p.get('cl_no_drs', 4.0728)
+        # Calculate effective 'k' factors (F = k * v^2) for squared interpolation
+        v_sq = np.maximum(self.aero_v_ms**2, 1e-3)  # Avoid division by zero
+        self.k_drag_closed = self.aero_drag_closed_n / v_sq
+        self.k_drag_open = self.aero_drag_open_n / v_sq
+        self.k_df_closed = self.aero_df_closed_n / v_sq
+        self.k_df_open = self.aero_df_open_n / v_sq
 
         self.rho = self.p.get('rho', 1.225)           # Air density
         self.area = self.p.get('frontal_area', 1.151) # Frontal area
@@ -299,8 +301,22 @@ class SimulationEngine:
 
         # Updated Aero Model: Quadratic Downforce
         v_curr = self.state['v']
-        self.state['f_downforce'] = (0.5 * self.rho * self.cl * self.area * v_curr**2)
-        f_drag = 0.5 * self.rho * self.cd * self.area * v_curr**2
+        v_sq = v_curr**2
+        
+        # DRS logic: open if steering is straight and speed is high
+        if abs(steering_angle) < np.radians(3) and v_curr > 15.0:
+            # DRS is open
+            k_drag = np.interp(v_curr, self.aero_v_ms, self.k_drag_open, left=0.0)
+            k_df = np.interp(v_curr, self.aero_v_ms, self.k_df_open, left=0.0)
+        else:
+            # DRS is closed
+            k_drag = np.interp(v_curr, self.aero_v_ms, self.k_drag_closed, left=0.0)
+            k_df = np.interp(v_curr, self.aero_v_ms, self.k_df_closed, left=0.0)
+            
+        # Apply squared scaling using real current velocity
+        v_sq = v_curr**2
+        f_drag = k_drag * v_sq
+        self.state['f_downforce'] = k_df * v_sq
 
         demands = self.controller.calculate_demands(throttle_pct, steering_angle, self.state, self.wheel_speeds, self.dt)
         motor_outputs = self.powertrain.step(demands['motor_torques'], self.wheel_speeds, self.dt, self.battery_temp)
